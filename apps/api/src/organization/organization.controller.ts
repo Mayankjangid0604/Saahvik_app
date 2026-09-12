@@ -1,0 +1,119 @@
+import {
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Inject,
+  ForbiddenException,
+} from '@nestjs/common';
+import { OrganizationService } from './organization.service';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { CurrentUser } from '../common/decorators';
+import { wrapSuccess } from '../common/response';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { RequestUser } from '../common/decorators';
+import * as bcrypt from 'bcrypt';
+
+class UpdateOrganizationDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  primaryColor?: string;
+
+  @IsOptional()
+  @IsString()
+  secondaryColor?: string;
+}
+
+class AddStaffDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(2)
+  name!: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
+}
+
+@Controller('organizations')
+@UseGuards(JwtAuthGuard)
+export class OrganizationController {
+  constructor(
+    @Inject(OrganizationService)
+    private readonly organizationService: OrganizationService,
+  ) {}
+
+  @Get('me')
+  async getMyOrganization(@CurrentUser() user: RequestUser) {
+    const org = await this.organizationService.getMyOrganization(user.organizationId);
+    return wrapSuccess(org, 'v1');
+  }
+
+  @Patch('me')
+  async updateOrganization(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: UpdateOrganizationDto,
+  ) {
+    if (user.role !== 'owner') {
+      throw new ForbiddenException('Only owners can update organization settings');
+    }
+    const org = await this.organizationService.updateOrganization(user.organizationId, dto);
+    return wrapSuccess(org, 'v1');
+  }
+
+  @Get('me/staff')
+  async getStaff(@CurrentUser() user: RequestUser) {
+    if (user.role !== 'owner') {
+      throw new ForbiddenException('Only owners can manage staff');
+    }
+    const staff = await this.organizationService.getStaffMembers(user.organizationId);
+    return wrapSuccess(staff, 'v1');
+  }
+
+  @Post('me/staff')
+  async addStaff(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: AddStaffDto,
+  ) {
+    if (user.role !== 'owner') {
+      throw new ForbiddenException('Only owners can add staff');
+    }
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const staff = await this.organizationService.addStaff(
+      user.organizationId,
+      dto.email,
+      dto.name,
+      passwordHash,
+    );
+    return wrapSuccess(
+      { id: staff.id, email: staff.email, name: staff.name, role: staff.role },
+      'v1',
+    );
+  }
+
+  @Delete('me/staff/:staffId')
+  async removeStaff(
+    @CurrentUser() user: RequestUser,
+    @Param('staffId') staffId: string,
+  ) {
+    if (user.role !== 'owner') {
+      throw new ForbiddenException('Only owners can remove staff');
+    }
+    await this.organizationService.removeStaff(user.organizationId, staffId);
+    return wrapSuccess({ deleted: true }, 'v1');
+  }
+}

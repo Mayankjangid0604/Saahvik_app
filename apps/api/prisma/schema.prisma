@@ -1,0 +1,346 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionPlan {
+  basic
+  beginner
+}
+
+enum UserRole {
+  owner
+  staff
+}
+
+enum BedStatus {
+  vacant
+  occupied
+  maintenance
+}
+
+enum ResidentStatus {
+  active
+  vacated
+  transferred
+}
+
+enum PaymentMethod {
+  cash
+  upi
+  bank_transfer
+  razorpay
+}
+
+enum NotificationChannel {
+  email
+  sms
+  whatsapp
+  push
+}
+
+enum NotificationStatus {
+  queued
+  sent
+  failed
+  pending_provider_config
+}
+
+model Organization {
+  id               String           @id @default(uuid()) @db.Uuid
+  name             String
+  subscriptionPlan SubscriptionPlan @default(basic) @map("subscription_plan")
+  logoUrl          String?          @map("logo_url")
+  primaryColor     String?          @map("primary_color")
+  secondaryColor   String?          @map("secondary_color")
+  razorpaySubscriptionId String?    @map("razorpay_subscription_id")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  users         User[]
+  properties    Property[]
+  residents     Resident[]
+  guardians     Guardian[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@map("organization")
+}
+
+model User {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  email          String       @unique
+  passwordHash   String       @map("password_hash")
+  name           String
+  role           UserRole     @default(owner)
+  emailVerified  Boolean      @default(false) @map("email_verified")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  auditLogs    AuditLog[]
+
+  @@index([organizationId])
+  @@map("user")
+}
+
+model EmailOtp {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  otp       String
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([email])
+  @@map("email_otp")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("password_reset")
+}
+
+model Property {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  timezone       String   @default("Asia/Kolkata")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  wings        Wing[]
+  rooms        Room[]
+
+  @@index([organizationId])
+  @@map("property")
+}
+
+model Wing {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @map("property_id") @db.Uuid
+  name       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  property Property @relation(fields: [propertyId], references: [id])
+  rooms    Room[]
+
+  @@index([propertyId])
+  @@map("wing")
+}
+
+model Room {
+  id         String  @id @default(uuid()) @db.Uuid
+  propertyId String  @map("property_id") @db.Uuid
+  wingId     String? @map("wing_id") @db.Uuid
+  roomNumber String  @map("room_number")
+  floor      Int
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  property Property @relation(fields: [propertyId], references: [id])
+  wing     Wing?    @relation(fields: [wingId], references: [id])
+  beds     Bed[]
+
+  @@index([propertyId])
+  @@index([wingId])
+  @@map("room")
+}
+
+model Bed {
+  id         String    @id @default(uuid()) @db.Uuid
+  roomId     String    @map("room_id") @db.Uuid
+  bedLabel   String    @map("bed_label")
+  status     BedStatus @default(vacant)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  room     Room      @relation(fields: [roomId], references: [id])
+  resident Resident?
+
+  @@index([roomId])
+  @@map("bed")
+}
+
+model Resident {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  bedId          String?        @map("bed_id") @db.Uuid
+  fullName       String         @map("full_name")
+  phone          String?
+  email          String?
+  photoKey       String?        @map("photo_key")
+  idDocumentKey  String?        @map("id_document_key")
+  status         ResidentStatus @default(active)
+  admissionDate  DateTime       @map("admission_date") @db.Date
+  vacateDate     DateTime?      @map("vacate_date") @db.Date
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  bed           Bed?           @relation(fields: [bedId], references: [id])
+  guardianLinks GuardianLink[]
+  feeStructures FeeStructure[]
+  payments      Payment[]
+  dues          Dues[]
+
+  @@unique([bedId], map: "resident_active_bed_unique")
+  @@index([organizationId])
+  @@map("resident")
+}
+
+model Guardian {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  fullName       String   @map("full_name")
+  phone          String
+  email          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  residentLinks GuardianLink[]
+
+  @@index([organizationId])
+  @@map("guardian")
+}
+
+model GuardianLink {
+  id           String @id @default(uuid()) @db.Uuid
+  residentId   String @map("resident_id") @db.Uuid
+  guardianId   String @map("guardian_id") @db.Uuid
+  relationship String
+
+  resident Resident @relation(fields: [residentId], references: [id])
+  guardian Guardian @relation(fields: [guardianId], references: [id])
+
+  @@unique([residentId, guardianId])
+  @@map("guardian_link")
+}
+
+model FeeStructure {
+  id              String   @id @default(uuid()) @db.Uuid
+  residentId      String   @map("resident_id") @db.Uuid
+  monthlyRentPaisa BigInt  @map("monthly_rent_paisa")
+  effectiveFrom   DateTime @map("effective_from") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  resident Resident @relation(fields: [residentId], references: [id])
+
+  @@index([residentId])
+  @@map("fee_structure")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  residentId        String        @map("resident_id") @db.Uuid
+  amountPaisa       BigInt        @map("amount_paisa")
+  method            PaymentMethod
+  paidOn            DateTime      @map("paid_on") @db.Date
+  receiptPdfKey     String?       @map("receipt_pdf_key")
+  razorpayPaymentId String?       @map("razorpay_payment_id")
+  idempotencyKey    String?       @unique @map("idempotency_key")
+  notes             String?
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  resident Resident @relation(fields: [residentId], references: [id])
+
+  @@index([residentId])
+  @@index([paidOn])
+  @@map("payment")
+}
+
+model Dues {
+  id            String   @id @default(uuid()) @db.Uuid
+  residentId    String   @map("resident_id") @db.Uuid
+  amountDuePaisa BigInt  @map("amount_due_paisa")
+  dueSince      DateTime @map("due_since") @db.Date
+  settled       Boolean  @default(false)
+  settledAt     DateTime? @map("settled_at") @db.Timestamptz
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  resident Resident @relation(fields: [residentId], references: [id])
+
+  @@index([residentId])
+  @@index([dueSince])
+  @@map("dues")
+}
+
+model Notification {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  channel        NotificationChannel
+  recipientPhone String?            @map("recipient_phone")
+  recipientEmail String?            @map("recipient_email")
+  subject        String?
+  body           String
+  templateId     String?            @map("template_id") @db.Uuid
+  status         NotificationStatus @default(queued)
+  scheduledAt    DateTime?          @map("scheduled_at") @db.Timestamptz
+  sentAt         DateTime?          @map("sent_at") @db.Timestamptz
+  errorMessage   String?            @map("error_message")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  template     NotificationTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([organizationId])
+  @@map("notification")
+}
+
+model NotificationTemplate {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  name           String
+  channel        NotificationChannel
+  subject        String?
+  body           String
+  variables      String[]           @default([])
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  notifications Notification[]
+
+  @@index([organizationId])
+  @@map("notification_template")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String?  @map("entity_id") @db.Uuid
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+model IdempotencyRecord {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  response  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("idempotency_record")
+}

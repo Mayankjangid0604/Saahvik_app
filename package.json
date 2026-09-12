@@ -1,0 +1,13 @@
+{
+  "name": "saahvik",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @saahvik/api dev",
+    "dev:web": "pnpm --filter @saahvik/web dev",
+    "build:api": "pnpm --filter @saahvik/api build",
+    "build:web": "pnpm --filter @saahvik/web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @saahvik/api test"
+  }
+}
