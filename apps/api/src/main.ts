@@ -3,6 +3,10 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
+import { initSentry } from './common/sentry';
+
+// Must run before anything else so Sentry can instrument early startup too.
+initSentry();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -29,7 +33,7 @@ async function bootstrap() {
 
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', { exclude: ['health'] });
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

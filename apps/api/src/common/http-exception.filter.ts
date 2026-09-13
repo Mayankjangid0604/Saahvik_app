@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { wrapError } from './response';
+import { Sentry } from './sentry';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -45,6 +46,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.error(
         exception instanceof Error ? exception.stack : String(exception),
       );
+    }
+
+    // Report genuine server-side failures (5xx) to Sentry — a no-op when
+    // SENTRY_DSN isn't configured. Never affects the client response below;
+    // this only ever adds telemetry, it doesn't change status/code/message.
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      Sentry.captureException(exception);
     }
 
     response.status(status).json(wrapError(code, message, 'v1'));

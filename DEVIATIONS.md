@@ -274,6 +274,34 @@ deviation looks harmless at the time.
   lint, typecheck, unit tests, e2e tests (including tenant isolation), and
   build; the `web` job covers lint and build (which includes `tsc -b`).
 
+## Phase 3 — Production Readiness Built
+
+Per `07_Environment_Infrastructure_Setup_Guide.md` §5 ("Monitoring — Currently
+a Live Gap") and SRS Section 8, this was an explicitly flagged, unambiguous
+gap (not a product decision), so it was built directly rather than raised as
+a question:
+
+- **Sentry, backend** (`src/common/sentry.ts`): initialized from `SENTRY_DSN`
+  at the top of `main.ts`, before the Nest app is created. No-op if the env
+  var is unset (local dev default). `AllExceptionsFilter` now calls
+  `Sentry.captureException()` for any response with status ≥ 500, in
+  addition to its existing server-side `Logger.error()` call — the client
+  envelope and status code are completely unchanged by this; Sentry
+  reporting is additive telemetry only, verified by re-running the phase 2
+  regression checks (razorpay-unconfigured 400, resident-detail 200) after
+  wiring it in.
+- **Sentry, frontend** (`src/lib/sentry.ts`): initialized from
+  `VITE_SENTRY_DSN` in `main.tsx`, same no-op-when-unset behavior. The whole
+  app is wrapped in `Sentry.ErrorBoundary` so uncaught render errors are
+  reported and shown a fallback screen instead of a blank white page.
+- **Health check** (`GET /health`, `src/health/`): queries the database
+  (`SELECT 1`) rather than only confirming the Node process is alive, and
+  returns a real `503` (not a `200` with an error body) on failure, so an
+  uptime monitor's status-code check actually fires. Excluded from the
+  `api/v1` global prefix so it's reachable at the bare `/health` path an
+  uptime monitor typically expects. Unit-tested
+  (`src/health/health.controller.spec.ts`).
+
 ## Out-of-Scope Items Verified Not Built (SRS Section 1.3)
 
 The following features are confirmed NOT present in the codebase:

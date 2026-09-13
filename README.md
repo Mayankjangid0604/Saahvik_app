@@ -216,6 +216,14 @@ org-wide.
 ### Audit
 - `GET /audit-logs` - List audit logs (owner only)
 
+### Health
+- `GET /health` - Unauthenticated health check for external uptime monitors (e.g. BetterStack). Excluded from the `/api/v1` prefix so it's reachable at the bare path. Actually queries the database rather than just confirming the process is alive; returns `200 {status:'ok', database:'ok', timestamp}` or `503` if the database is unreachable.
+
+## Monitoring
+
+- **Sentry** (error tracking, both apps): set `SENTRY_DSN` (backend) and `VITE_SENTRY_DSN` (frontend) to enable. With no DSN set, both are no-ops — safe to leave unset in local dev. Backend: `AllExceptionsFilter` reports every 5xx to Sentry while still returning the documented `{success,error,apiVersion}` envelope to the client and logging the full stack trace server-side — Sentry reporting never changes what the client sees. Frontend: uncaught render errors are caught by a `Sentry.ErrorBoundary` wrapping the whole app.
+- **Uptime**: point an external monitor (BetterStack or equivalent) at `GET /health` on the deployed API. A non-200 response (503, or no response) should alert.
+
 ## Security
 
 - JWT stored in localStorage (never sessionStorage)
