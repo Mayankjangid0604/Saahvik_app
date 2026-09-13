@@ -327,6 +327,18 @@ describe('Tenant Isolation (e2e)', () => {
         .set(authed(orgA.token));
       expect([403, 404]).toContain(res.status);
     });
+
+    it('a completely unauthenticated request for a file (no token at all) is rejected', async () => {
+      // 11_Acceptance_Criteria_Signoff_Checklist.md §1: "try requesting a
+      // resident photo URL directly, unauthenticated; it must fail." This
+      // is a stricter check than the cross-org ones above — no
+      // Authorization header whatsoever, proving there is no static/public
+      // fallback route for stored files.
+      const res = await request(app.getHttpServer()).get(
+        `/api/v1/files/${orgA.fileKey}`,
+      );
+      expect(res.status).toBe(401);
+    });
   });
 
   describe('Audit logs', () => {
