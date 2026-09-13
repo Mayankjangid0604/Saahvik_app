@@ -11,24 +11,26 @@ import {
 import { Response } from 'express';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser } from '../common/decorators';
+import { CurrentUser, RequestUser, RequireCapability, CapabilityGuard } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
 import { ResidentStatus } from '@prisma/client';
 
 @Controller('reports')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CapabilityGuard)
 export class ReportController {
   constructor(
     @Inject(ReportService) private readonly reportService: ReportService,
   ) {}
 
   @Get('occupancy')
+  @RequireCapability('reports:view')
   async getOccupancy(@CurrentUser() user: RequestUser) {
     const data = await this.reportService.getOccupancyReport(user.organizationId);
     return wrapSuccess(data, 'v1');
   }
 
   @Get('dues')
+  @RequireCapability('reports:view')
   async getDues(
     @CurrentUser() user: RequestUser,
     @Query('settled') settled?: string,
@@ -44,6 +46,7 @@ export class ReportController {
   }
 
   @Get('residents')
+  @RequireCapability('reports:view')
   async getResidents(
     @CurrentUser() user: RequestUser,
     @Query('status') status?: string,
@@ -58,6 +61,7 @@ export class ReportController {
   }
 
   @Get('monthly-collection')
+  @RequireCapability('reports:view')
   async getMonthlyCollection(
     @CurrentUser() user: RequestUser,
     @Query('month') monthStr?: string,
@@ -83,6 +87,7 @@ export class ReportController {
   }
 
   @Get(':reportType/export')
+  @RequireCapability('reports:export')
   async exportReport(
     @CurrentUser() user: RequestUser,
     @Param('reportType') reportType: string,

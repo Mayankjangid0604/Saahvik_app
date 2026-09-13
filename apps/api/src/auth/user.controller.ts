@@ -17,12 +17,7 @@ export class UserController {
     if (!profile) {
       throw new NotFoundException('User not found');
     }
-    const { id, name, email, role } = profile as unknown as {
-      id: string;
-      name: string;
-      email: string;
-      role: string;
-    };
-    return wrapSuccess({ id, name, email, role }, 'v1');
+    const { id, name, email, role, permissions } = profile;
+    return wrapSuccess({ id, name, email, role, permissions }, 'v1');
   }
 }

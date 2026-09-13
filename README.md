@@ -25,11 +25,12 @@ A production-grade SaaS platform for hostel and PG accommodation management, bui
 - File uploads (local + S3 storage)
 
 ### Beginner Plan (adds)
-- Staff role with deny-by-default permissions
+- Staff role with deny-by-default permissions, individually configurable per staff member (see [Staff Permissions](#staff-permissions))
 - Email/SMS/WhatsApp notifications (provider-agnostic adapter pattern)
 - Notification templates with variable substitution
 - Razorpay integration for resident fee collection
 - Staff management
+- Data retention: 30-day post-cancellation wipe of resident photos/ID documents (see [Data Retention](#data-retention))
 
 ## Tech Stack
 
@@ -147,14 +148,17 @@ Financial and lifecycle writes require an `Idempotency-Key` header. Duplicate ke
 - `POST /auth/resend-otp` - Resend verification OTP
 - `POST /auth/forgot-password` - Request password reset
 - `POST /auth/reset-password` - Reset password
-- `GET /users/me` - Current user's profile (id, name, email, role)
+- `GET /users/me` - Current user's profile (id, name, email, role, permissions)
 
 ### Organization
 - `GET /organizations/me` - Get organization details
-- `PATCH /organizations/me` - Update organization
-- `GET /organizations/me/staff` - List staff members
-- `POST /organizations/me/staff` - Add staff member
-- `DELETE /organizations/me/staff/:id` - Remove staff member
+- `PATCH /organizations/me` - Update organization (owner only)
+- `GET /organizations/me/staff` - List staff members (owner only, includes each member's `permissions`)
+- `POST /organizations/me/staff` - Add staff member (owner only; starts with the default capability set)
+- `DELETE /organizations/me/staff/:id` - Remove staff member (owner only)
+- `PATCH /organizations/me/staff/:staffId/permissions` - Grant/revoke a staff member's capabilities (owner only, not delegable — see [Staff Permissions](#staff-permissions) below)
+- `POST /organizations/me/cancel` - Mark the subscription cancelled, starting the 30-day data-retention grace period (owner only)
+- `POST /organizations/me/reactivate` - Undo a cancellation before the grace period elapses (owner only; fails once data has been wiped)
 
 ### Property
 - `GET /properties/me` - Get property
@@ -235,9 +239,21 @@ org-wide.
 - `@Inject()` on every constructor parameter (esbuild compatibility)
 - Idempotency keys on all financial/lifecycle writes
 
+**Before wiring live Razorpay credentials into a production environment**: confirm Razorpay's own KYC/business verification for the account has actually been approved. Razorpay does not activate live payment collection (as opposed to test-mode keys) until KYC clears, and this is a Razorpay-side business/compliance process outside this codebase — do not assume it's done. Verify current status directly in the Razorpay dashboard before deploying `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` values that aren't test-mode keys.
+
 ## Money Handling
 
 All currency values are stored and transmitted as **BigInt paisa** (integer arithmetic only, never float/decimal). The frontend converts rupee inputs to paisa before API calls and formats paisa to rupees for display.
+
+## Staff Permissions
+
+Beyond the fixed owner/staff role split, an owner can independently grant or revoke a fixed set of capabilities per staff member: `property:manage`, `residents:manage`, `billing:manage_fee_structure`, `payments:record`, `reports:view`, `reports:export`, `notifications:send`, `notifications:manage_templates`, `audit:view`. An owner always has every capability implicitly. A new staff member starts with today's default set (residents, payments, reports, notifications) — nothing changes for existing staff until an owner deliberately edits their permissions in Settings → Staff Management, where "Cashier" / "Warden" / "Full operational" buttons apply a preset combination that can still be adjusted further.
+
+Permission changes take effect immediately (checked fresh from the database on every request, not cached in the JWT) — no re-login required. Adding/removing staff logins and editing another staff member's own permissions are **not** delegable through this system; they remain hard owner-only actions, since granting that would let a staff member escalate their own or another's access. See `DEVIATIONS.md` for why this exists — it's a deliberate, disclosed override of the SRS's default fixed-role model for this tier, not part of the original spec.
+
+## Data Retention
+
+Per `12_Security_Data_Privacy_Policy.md` §7: a vacated-but-still-subscribed resident's photo/ID document is retained indefinitely (no automatic deletion) — this remains an open item by design. Once an organization's subscription is cancelled (`POST /organizations/me/cancel`), a 30-day grace period begins; a daily cron job (`RetentionService`, `@nestjs/schedule`) then permanently deletes that organization's resident photos and ID documents from storage. Payments, dues, fee structures, and audit logs are never touched by this job — they're a separate, permanently-retained financial/audit concern per the same policy document. Reactivating (`POST /organizations/me/reactivate`) undoes a cancellation, but only before the wipe has run.
 
 ## Project Structure
 
@@ -307,6 +323,19 @@ pnpm test:e2e
   rejects a second active resident on an already-occupied bed at the
   database level, and that a vacated resident's retained `bed_id` doesn't
   block a new admission to that bed.
+- **Health check** (`src/health/health.controller.spec.ts`): 200 when the
+  database is reachable, a real 503 when it isn't.
+- **Capability guard** (`src/common/decorators.spec.ts`): owner bypass,
+  missing/present capability, multi-capability requirements, no-user case.
+- **Staff permissions** (`test/staff-permissions.e2e-spec.ts`): the full
+  real flow — a new staff member's default capabilities, a denied action
+  becoming allowed the moment an owner grants it (no re-login), an unknown
+  capability value rejected, and a staff member unable to grant themselves
+  permissions.
+- **Retention** (`src/retention/retention.service.spec.ts`): no-op when
+  nothing is due, correct file deletion + column nulling, the exact 30-day
+  cutoff calculation, and that one failed file delete doesn't block the
+  rest of the wipe.
 
 ## CI
 

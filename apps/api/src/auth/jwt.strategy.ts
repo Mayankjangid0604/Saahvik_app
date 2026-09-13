@@ -32,6 +32,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: user.id,
       organizationId: user.organizationId,
       role: user.role,
+      // Looked up fresh on every request (validateUserById re-queries the
+      // DB per request already) rather than baked into the JWT, so a
+      // permission an owner revokes takes effect immediately rather than
+      // waiting out the token's 7-day expiry.
+      permissions: user.permissions,
     };
   }
 }

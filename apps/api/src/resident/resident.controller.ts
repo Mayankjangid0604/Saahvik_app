@@ -13,7 +13,12 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser } from '../common/decorators';
+import {
+  CurrentUser,
+  RequestUser,
+  RequireCapability,
+  CapabilityGuard,
+} from '../common/decorators';
 import { ResidentService } from './resident.service';
 import {
   CreateResidentDto,
@@ -52,6 +57,8 @@ export class ResidentController {
   }
 
   @Post()
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('residents:manage')
   async createResident(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateResidentDto,
@@ -79,6 +86,8 @@ export class ResidentController {
   }
 
   @Patch(':id')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('residents:manage')
   async updateResident(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -94,6 +103,8 @@ export class ResidentController {
   }
 
   @Post(':id/assign-bed')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('residents:manage')
   async assignBed(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -114,6 +125,8 @@ export class ResidentController {
   }
 
   @Post(':id/vacate')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('residents:manage')
   async vacateResident(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -134,6 +147,8 @@ export class ResidentController {
   }
 
   @Post(':id/transfer')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('residents:manage')
   async transferResident(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,

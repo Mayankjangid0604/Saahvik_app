@@ -1,6 +1,7 @@
 import './common/bigint-json-patch';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { OrganizationModule } from './organization/organization.module';
@@ -13,10 +14,12 @@ import { FileModule } from './file/file.module';
 import { AuditModule } from './audit/audit.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
+import { RetentionModule } from './retention/retention.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     OrganizationModule,
@@ -29,6 +32,7 @@ import { HealthModule } from './health/health.module';
     AuditModule,
     DashboardModule,
     HealthModule,
+    RetentionModule,
   ],
 })
 export class AppModule {}

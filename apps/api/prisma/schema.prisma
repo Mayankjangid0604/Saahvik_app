@@ -58,6 +58,8 @@ model Organization {
   primaryColor     String?          @map("primary_color")
   secondaryColor   String?          @map("secondary_color")
   razorpaySubscriptionId String?    @map("razorpay_subscription_id")
+  cancelledAt      DateTime?        @map("cancelled_at") @db.Timestamptz
+  dataWipedAt      DateTime?        @map("data_wiped_at") @db.Timestamptz
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -78,6 +80,11 @@ model User {
   passwordHash   String       @map("password_hash")
   name           String
   role           UserRole     @default(owner)
+  // Staff-only, owner-editable capability toggles (owner bypasses all
+  // checks implicitly — this array is never read for a user with role
+  // 'owner'). See src/common/capabilities.ts for the fixed capability list
+  // and defaults; unknown values are rejected at the API layer.
+  permissions    String[]     @default(["property:manage", "residents:manage", "payments:record", "reports:view", "reports:export", "notifications:send"])
   emailVerified  Boolean      @default(false) @map("email_verified")
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz

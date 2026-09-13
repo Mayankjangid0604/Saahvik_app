@@ -7,6 +7,44 @@ export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'razorpay';
 export type NotificationChannel = 'email' | 'sms' | 'whatsapp' | 'push';
 export type NotificationStatus = 'queued' | 'sent' | 'failed' | 'pending_provider_config';
 
+// Fixed, owner-editable staff capability set (Phase 3). An owner implicitly
+// has every capability; this list only ever applies to role 'staff'.
+export type StaffCapability =
+  | 'property:manage'
+  | 'residents:manage'
+  | 'billing:manage_fee_structure'
+  | 'payments:record'
+  | 'reports:view'
+  | 'reports:export'
+  | 'notifications:send'
+  | 'notifications:manage_templates'
+  | 'audit:view';
+
+export const STAFF_CAPABILITIES: { value: StaffCapability; label: string }[] = [
+  { value: 'property:manage', label: 'Manage wings, rooms, beds' },
+  { value: 'residents:manage', label: 'Admit / vacate / transfer residents' },
+  { value: 'billing:manage_fee_structure', label: 'Set fee structure / rent' },
+  { value: 'payments:record', label: 'Record payments' },
+  { value: 'reports:view', label: 'View reports & dues' },
+  { value: 'reports:export', label: 'Export reports (PDF/Excel)' },
+  { value: 'notifications:send', label: 'Send notifications / broadcasts' },
+  { value: 'notifications:manage_templates', label: 'Manage notification templates' },
+  { value: 'audit:view', label: 'View audit log' },
+];
+
+export const CAPABILITY_PRESETS: Record<string, StaffCapability[]> = {
+  Cashier: ['payments:record', 'reports:view'],
+  Warden: ['residents:manage', 'notifications:send', 'reports:view'],
+  'Full operational': [
+    'property:manage',
+    'residents:manage',
+    'payments:record',
+    'reports:view',
+    'reports:export',
+    'notifications:send',
+  ],
+};
+
 // ---- Auth ----
 export interface AuthUser {
   userId: string;
@@ -14,6 +52,7 @@ export interface AuthUser {
   role: UserRole;
   name: string;
   email: string;
+  permissions: StaffCapability[];
 }
 
 export interface LoginResponse {

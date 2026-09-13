@@ -283,12 +283,24 @@ export class AuthService {
     return { accessToken };
   }
 
-  async validateUserById(
-    userId: string,
-  ): Promise<{ id: string; organizationId: string; role: string } | null> {
+  async validateUserById(userId: string): Promise<{
+    id: string;
+    organizationId: string;
+    role: string;
+    email: string;
+    name: string;
+    permissions: string[];
+  } | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, organizationId: true, role: true, email: true, name: true },
+      select: {
+        id: true,
+        organizationId: true,
+        role: true,
+        email: true,
+        name: true,
+        permissions: true,
+      },
     });
     return user;
   }

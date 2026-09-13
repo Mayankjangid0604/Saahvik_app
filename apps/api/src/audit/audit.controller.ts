@@ -4,21 +4,21 @@ import {
   Query,
   UseGuards,
   Inject,
-  ForbiddenException,
 } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser } from '../common/decorators';
+import { CurrentUser, RequestUser, RequireCapability, CapabilityGuard } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
 
 @Controller('audit-logs')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CapabilityGuard)
 export class AuditController {
   constructor(
     @Inject(AuditService) private readonly auditService: AuditService,
   ) {}
 
   @Get()
+  @RequireCapability('audit:view')
   async getAuditLogs(
     @CurrentUser() user: RequestUser,
     @Query('page') page?: string,
@@ -28,11 +28,6 @@ export class AuditController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    // Owner-only access
-    if (user.role !== 'owner') {
-      throw new ForbiddenException('Only owners can view audit logs');
-    }
-
     const data = await this.auditService.getAuditLogs(user.organizationId, {
       page: page ? parseInt(page, 10) : undefined,
       pageSize: pageSize ? parseInt(pageSize, 10) : undefined,

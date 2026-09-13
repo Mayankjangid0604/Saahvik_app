@@ -302,6 +302,126 @@ a question:
   uptime monitor typically expects. Unit-tested
   (`src/health/health.controller.spec.ts`).
 
+## Phase 3 — Deliberate Scope Override: Configurable Staff Permissions
+
+**This is a disclosed deviation, not a bug fix or an unambiguous production-
+readiness item.** It directly overrides a documented scope boundary:
+
+> `04_Role_Permission_Matrix.md`: "the fuller enterprise role list...
+> belongs to later tiers and is explicitly not built here."
+>
+> `DEVIATIONS.md` (this file, Phase 1/2): "Advanced role-based access
+> (beyond owner/staff)" was listed under confirmed out-of-scope items.
+
+When asked what a Beginner-tier "simple approval chain" (Screen Catalog
+#30) should mean, the response described something materially different: a
+configurable, owner-editable, per-staff-member permission system (e.g. "a
+cashier can collect money", "a warden can admit residents and also be given
+SMS rights"), not a pending/approval workflow at all. Presented back as an
+explicit scope-override question — proceed with the fixed owner/staff
+model, override it, or build a narrower middle-ground version — the answer
+was to proceed with the full override. That decision, not an engineering
+judgment call, is why this exists.
+
+**What was built:**
+
+- A fixed, enumerable set of 9 capabilities (`src/common/capabilities.ts`):
+  `property:manage`, `residents:manage`, `billing:manage_fee_structure`,
+  `payments:record`, `reports:view`, `reports:export`,
+  `notifications:send`, `notifications:manage_templates`, `audit:view`.
+  Deliberately bounded rather than free-form custom roles, so every
+  capability maps to a specific, reviewable guard in the codebase.
+- `User.permissions` (Postgres text array, migration
+  `20260913231348_staff_permissions_and_org_retention`), defaulting to
+  exactly today's pre-Phase-3 staff behavior (`property:manage`,
+  `residents:manage`, `payments:record`, `reports:view`, `reports:export`,
+  `notifications:send`) — existing staff logins see no behavior change
+  until an owner deliberately edits their permissions.
+- `CapabilityGuard` + `@RequireCapability()` (`src/common/decorators.ts`):
+  an `owner` always passes every check; a `staff` user's `permissions`
+  array (read fresh from the DB on every request via `JwtStrategy`, not
+  baked into the JWT, so a revoked permission takes effect immediately
+  rather than after the token's 7-day expiry) is checked against the
+  required capability list.
+- `PATCH /organizations/me/staff/:staffId/permissions` (owner-only) to
+  grant/revoke; unknown capability values are rejected with a 400. Preset
+  "quick apply" buttons (Cashier, Warden, Full operational) in the frontend
+  are just starting points for the same array — not a separate stored role
+  concept.
+- Applied to: resident lifecycle actions, fee structure, payment
+  recording, wing/room/bed creation, notification send/broadcast/template
+  management, report viewing/export, and audit log visibility.
+
+**Deliberately NOT made delegable, as a hard security boundary the "owner
+can grant extra rights" framing does not override:**
+- Adding/removing staff logins, or editing another staff member's
+  permissions — letting a staff member with any granted capability further
+  grant capabilities (to themselves or others) is a privilege-escalation
+  path, so this stays hard owner-only exactly like it was before Phase 3.
+  Covered by `test/staff-permissions.e2e-spec.ts` ("a staff member cannot
+  grant themselves permissions").
+- Organization/property core settings (name, address, branding) — an
+  identity/configuration concern, not an operational task like the
+  cashier/warden examples given.
+
+**Test coverage**: `src/common/decorators.spec.ts` (guard logic in
+isolation: owner bypass, missing/present capability, multi-capability
+requirements), `test/staff-permissions.e2e-spec.ts` (the real end-to-end
+flow: default permissions on a new staff member, denied → owner grants →
+allowed with no re-login, unknown capability rejected, self-grant denied).
+
+## Phase 3 — Data Retention Decision (Security & Privacy Policy §7)
+
+**Also a disclosed product/legal decision, not inferred from code.** Two
+questions were open in `12_Security_Data_Privacy_Policy.md` §7:
+
+1. **Per-resident retention** (a vacated-but-still-subscribed resident's
+   photo/ID document): decided to **leave this open/indefinite**, matching
+   today's actual behavior. No auto-deletion happens while an organization
+   stays subscribed, regardless of an individual resident's vacate date.
+   This item remains genuinely undecided — it is not silently resolved by
+   what was easiest to build.
+2. **Full account-cancellation wipe**: decided as a **30-day grace period**
+   after cancellation, then permanent deletion of the organization's
+   sensitive personal data (resident photos and ID documents only).
+
+**What was built** (`src/retention/`):
+
+- `Organization.cancelledAt` / `Organization.dataWipedAt` (same migration
+  as the permissions work above).
+- `POST /organizations/me/cancel` and `POST /organizations/me/reactivate`
+  (owner-only) — reactivating is blocked once `dataWipedAt` is set, since
+  by then the underlying files are already gone.
+- `RetentionService.wipeCancelledOrganizations()`, run daily via
+  `@nestjs/schedule`'s `@Cron(EVERY_DAY_AT_3AM)`: finds every organization
+  where `cancelledAt <= now - 30 days` and `dataWipedAt` is still null,
+  deletes each of their residents' `photoKey`/`idDocumentKey` files from
+  storage, nulls those two columns, and marks the organization
+  `dataWipedAt`. Idempotent (a re-run is a no-op for an already-wiped org).
+  Not exposed via any HTTP route — it is a cross-tenant background job,
+  deliberately not reachable through any single org's authenticated API
+  surface.
+- **Explicitly out of scope for this job**: payments, dues, fee
+  structures, audit logs, or any other financial/audit record. The policy
+  itself distinguishes "permanent retention of operational, financial,
+  audit, and history data" from "resident personal data retention" as
+  separate concerns — this job only ever touches the latter (S3/local
+  file objects plus the two key columns referencing them), never the
+  former.
+- **Not built**: automatic cancellation via a Razorpay subscription
+  lifecycle webhook. No subscription-cancellation webhook event handling
+  exists anywhere in the codebase (the existing Razorpay webhook handler
+  only processes Beginner-tier resident fee `payment.captured` events).
+  `POST /organizations/me/cancel` is a direct owner action for now: wiring
+  actual Razorpay subscription webhooks to call it automatically would be
+  a separate, larger integration task.
+
+**Test coverage**: `src/retention/retention.service.spec.ts` (no-op when
+nothing is due, correct file deletion + column nulling, exact 30-day cutoff
+calculation, continues past an individual file-delete failure). Manually
+verified end-to-end against the dev database: cancel → reactivate (while
+un-wiped) succeeds; `dataWipedAt` blocks reactivation once set.
+
 ## Out-of-Scope Items Verified Not Built (SRS Section 1.3)
 
 The following features are confirmed NOT present in the codebase:
@@ -312,7 +432,13 @@ The following features are confirmed NOT present in the codebase:
 - [ ] Inventory management
 - [ ] Complaint/maintenance ticketing
 - [ ] CRM features
-- [ ] Advanced role-based access (beyond owner/staff)
+- [x] ~~Advanced role-based access (beyond owner/staff)~~ — **superseded by
+  the Phase 3 configurable staff permission system** (see "Phase 3 —
+  Deliberate Scope Override" above). The role model is still fixed
+  (owner/staff, two roles), but a staff member's *capabilities* within that
+  role are now owner-configurable per individual, which is what the
+  original out-of-scope note above was about. Custom/free-form roles
+  beyond this fixed capability list are still not built.
 - [ ] Multi-currency support
 - [ ] Third-party integrations beyond Razorpay/Resend
 - [ ] Self-service resident portal

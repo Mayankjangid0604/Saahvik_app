@@ -12,7 +12,14 @@ import {
 } from '@nestjs/common';
 import { PropertyService } from './property.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser, Roles, RolesGuard } from '../common/decorators';
+import {
+  CurrentUser,
+  RequestUser,
+  Roles,
+  RolesGuard,
+  RequireCapability,
+  CapabilityGuard,
+} from '../common/decorators';
 import { wrapSuccess } from '../common/response';
 import { UserRole } from '@prisma/client';
 import {
@@ -48,6 +55,8 @@ export class PropertyController {
   }
 
   @Post('wings')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('property:manage')
   async createWing(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateWingDto,
@@ -63,6 +72,8 @@ export class PropertyController {
   }
 
   @Post('rooms')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('property:manage')
   async createRooms(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateRoomsDto,
@@ -81,6 +92,8 @@ export class PropertyController {
   }
 
   @Post('rooms/:roomId/beds')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('property:manage')
   async createBeds(
     @CurrentUser() user: RequestUser,
     @Param('roomId', ParseUUIDPipe) roomId: string,

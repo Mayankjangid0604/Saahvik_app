@@ -14,7 +14,14 @@ import {
 import { UserRole } from '@prisma/client';
 import { BillingService } from './billing.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser, Roles, RolesGuard } from '../common/decorators';
+import {
+  CurrentUser,
+  RequestUser,
+  Roles,
+  RolesGuard,
+  RequireCapability,
+  CapabilityGuard,
+} from '../common/decorators';
 import { wrapSuccess } from '../common/response';
 import {
   SetFeeStructureDto,
@@ -33,8 +40,8 @@ export class BillingController {
   // ─── Fee Structure ────────────────────────────────────────────────────
 
   @Post('residents/:id/fee-structure')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.owner)
+  @UseGuards(JwtAuthGuard, CapabilityGuard)
+  @RequireCapability('billing:manage_fee_structure')
   async setFeeStructure(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) residentId: string,
@@ -66,8 +73,8 @@ export class BillingController {
   // ─── Payments ─────────────────────────────────────────────────────────
 
   @Post('residents/:id/payments')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.owner, UserRole.staff)
+  @UseGuards(JwtAuthGuard, CapabilityGuard)
+  @RequireCapability('payments:record')
   async recordPayment(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) residentId: string,

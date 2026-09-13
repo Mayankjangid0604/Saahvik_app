@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { jwtDecode } from '@/lib/jwt-decode';
 import api, { unwrap } from '@/lib/api';
-import type { AuthUser, LoginResponse, SignupResponse, UserRole } from '@/lib/types';
+import type { AuthUser, LoginResponse, SignupResponse, UserRole, StaffCapability } from '@/lib/types';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -38,6 +38,7 @@ function parseToken(token: string): AuthUser | null {
       role: payload.role,
       name: '',
       email: '',
+      permissions: [],
     };
   } catch {
     return null;
@@ -72,15 +73,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: payload.role as UserRole,
       name: '',
       email,
+      permissions: [],
     };
 
-    // Fetch user profile to get name
+    // Fetch user profile to get name + current permissions
     try {
-      const profile = unwrap<{ id: string; name: string; email: string; role: string }>(
-        await api.get('/users/me'),
-      );
+      const profile = unwrap<{
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        permissions: StaffCapability[];
+      }>(await api.get('/users/me'));
       authUser.name = profile.name;
       authUser.email = profile.email;
+      authUser.permissions = profile.permissions ?? [];
     } catch {
       // Profile endpoint may not exist yet; that's fine
       authUser.name = email.split('@')[0] ?? '';
@@ -106,7 +113,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: payload.role as UserRole,
       name: email.split('@')[0] ?? '',
       email,
+      permissions: [],
     };
+
+    try {
+      const profile = unwrap<{
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        permissions: StaffCapability[];
+      }>(await api.get('/users/me'));
+      authUser.name = profile.name;
+      authUser.email = profile.email;
+      authUser.permissions = profile.permissions ?? [];
+    } catch {
+      // Fall back to email-derived name; permissions stay [] which means
+      // no delegable actions show, but server-side enforcement is what
+      // actually matters for security.
+    }
+
     localStorage.setItem('saahvik_user', JSON.stringify(authUser));
     setUser(authUser);
   }, []);
@@ -150,4 +176,14 @@ export function useAuth(): AuthContextValue {
     throw new Error('useAuth must be used within AuthProvider');
   }
   return ctx;
+}
+
+/** An owner always has every capability; a staff member only has what's in
+ * their `permissions` array. Server-side enforcement (CapabilityGuard) is
+ * what actually matters for security — this is UI convenience only, to
+ * hide actions a user isn't allowed to take rather than let them hit a 403. */
+export function hasCapability(user: AuthUser | null, capability: StaffCapability): boolean {
+  if (!user) return false;
+  if (user.role === 'owner') return true;
+  return user.permissions?.includes(capability) ?? false;
 }

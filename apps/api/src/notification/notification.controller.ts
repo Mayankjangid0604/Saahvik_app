@@ -12,9 +12,8 @@ import {
 } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser, Roles, RolesGuard } from '../common/decorators';
+import { CurrentUser, RequestUser, RequireCapability, CapabilityGuard } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
-import { UserRole } from '@prisma/client';
 import {
   SendNotificationDto,
   BroadcastNotificationDto,
@@ -45,6 +44,8 @@ export class NotificationController {
   }
 
   @Post('send')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('notifications:send')
   async send(
     @CurrentUser() user: RequestUser,
     @Body() dto: SendNotificationDto,
@@ -60,6 +61,8 @@ export class NotificationController {
   }
 
   @Post('broadcast')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('notifications:send')
   async broadcast(
     @CurrentUser() user: RequestUser,
     @Body() dto: BroadcastNotificationDto,
@@ -81,8 +84,8 @@ export class NotificationController {
   }
 
   @Post('templates')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.owner)
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('notifications:manage_templates')
   async createTemplate(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateTemplateDto,
@@ -95,8 +98,8 @@ export class NotificationController {
   }
 
   @Patch('templates/:id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.owner)
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('notifications:manage_templates')
   async updateTemplate(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
