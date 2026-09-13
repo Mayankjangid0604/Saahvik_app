@@ -16,16 +16,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { FileService } from './file.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser } from '../common/decorators';
+import { CurrentUser, RequestUser } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
 import * as fs from 'fs';
 import * as path from 'path';
-
-interface AuthUser {
-  userId: string;
-  orgId: string;
-  role: string;
-}
 
 @Controller('files')
 @UseGuards(JwtAuthGuard)
@@ -42,7 +36,7 @@ export class FileController {
     }),
   )
   async upload(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @UploadedFile() file: Express.Multer.File,
     @Query('category') category?: string,
   ) {
@@ -50,13 +44,13 @@ export class FileController {
       throw new NotFoundException('No file uploaded');
     }
 
-    const result = await this.fileService.upload(user.orgId, file, category);
+    const result = await this.fileService.upload(user.organizationId, file, category);
     return wrapSuccess(result, 'v1');
   }
 
   @Get(':key(*)')
   async getFile(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Param('key') key: string,
     @Res() res: Response,
   ) {
@@ -68,7 +62,7 @@ export class FileController {
       }
 
       // Verify org ownership
-      if (!key.startsWith(`${user.orgId}/`)) {
+      if (!key.startsWith(`${user.organizationId}/`)) {
         throw new NotFoundException('File not found');
       }
 
@@ -94,16 +88,16 @@ export class FileController {
     }
 
     // For S3, redirect to presigned URL
-    const signedUrl = await this.fileService.getSignedUrl(user.orgId, key);
+    const signedUrl = await this.fileService.getSignedUrl(user.organizationId, key);
     res.redirect(signedUrl);
   }
 
   @Delete(':key(*)')
   async deleteFile(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Param('key') key: string,
   ) {
-    await this.fileService.delete(user.orgId, key);
+    await this.fileService.delete(user.organizationId, key);
     return wrapSuccess({ deleted: true }, 'v1');
   }
 }

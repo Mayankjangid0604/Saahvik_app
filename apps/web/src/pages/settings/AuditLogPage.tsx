@@ -30,16 +30,7 @@ export default function AuditLogPage() {
   const [dateTo, setDateTo] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Only owners can view audit logs
-  if (user?.role !== 'owner') {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-gray-600">
-          Only organization owners can view audit logs.
-        </p>
-      </div>
-    );
-  }
+  const isOwner = user?.role === 'owner';
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['audit-logs', page, pageSize, entityType, dateFrom, dateTo],
@@ -55,11 +46,23 @@ export default function AuditLogPage() {
           },
         }),
       ),
+    enabled: isOwner,
   });
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
+
+  // Only owners can view audit logs
+  if (!isOwner) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <p className="text-gray-600">
+          Only organization owners can view audit logs.
+        </p>
+      </div>
+    );
+  }
 
   if (isLoading) return <PageLoader />;
   if (isError)

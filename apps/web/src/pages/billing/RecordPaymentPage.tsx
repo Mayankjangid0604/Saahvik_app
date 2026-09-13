@@ -65,9 +65,8 @@ export default function RecordPaymentPage() {
       if (!residentId) throw new Error('Select a resident');
 
       const response = await api.post(
-        '/billing/payments',
+        `/residents/${residentId}/payments`,
         {
-          residentId,
           amountPaisa: String(rupeesToPaisa(amount)),
           method,
           paidOn,
@@ -90,7 +89,10 @@ export default function RecordPaymentPage() {
 
   const handleDownloadReceipt = async (paymentId: string) => {
     try {
-      const response = await api.get(`/billing/payments/${paymentId}/receipt`, {
+      const { receiptPdfKey } = unwrap<{ receiptPdfKey: string }>(
+        await api.get(`/residents/${residentId}/payments/${paymentId}/receipt`),
+      );
+      const response = await api.get(`/files/${receiptPdfKey}`, {
         responseType: 'blob',
       });
       const url = URL.createObjectURL(response.data as Blob);
@@ -145,10 +147,10 @@ export default function RecordPaymentPage() {
               Download Receipt
             </button>
             <button
-              onClick={() => navigate('/billing/payments')}
+              onClick={() => navigate(`/residents/${residentId}`)}
               className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
             >
-              View Payment History
+              View Resident Profile
             </button>
           </div>
           <button

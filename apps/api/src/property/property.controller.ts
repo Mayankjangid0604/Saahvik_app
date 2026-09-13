@@ -12,8 +12,9 @@ import {
 } from '@nestjs/common';
 import { PropertyService } from './property.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser } from '../common/decorators';
+import { CurrentUser, RequestUser, Roles, RolesGuard } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
+import { UserRole } from '@prisma/client';
 import {
   UpdatePropertyDto,
   CreateWingDto,
@@ -36,6 +37,8 @@ export class PropertyController {
   }
 
   @Patch()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.owner)
   async updateProperty(
     @CurrentUser() user: RequestUser,
     @Body() dto: UpdatePropertyDto,

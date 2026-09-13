@@ -13,7 +13,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, CurrentUserPayload } from '../auth/current-user.decorator';
+import { CurrentUser, RequestUser } from '../common/decorators';
 import { ResidentService } from './resident.service';
 import {
   CreateResidentDto,
@@ -35,25 +35,25 @@ export class ResidentController {
 
   @Get()
   async getResidents(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Query() query: ResidentQueryDto,
   ) {
-    const result = await this.residentService.getResidents(user.orgId, query);
+    const result = await this.residentService.getResidents(user.organizationId, query);
     return wrapSuccess(result, 'v1');
   }
 
   @Get('search')
   async searchResidents(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Query() query: SearchResidentsDto,
   ) {
-    const result = await this.residentService.searchResidents(user.orgId, query);
+    const result = await this.residentService.searchResidents(user.organizationId, query);
     return wrapSuccess(result, 'v1');
   }
 
   @Post()
   async createResident(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Body() dto: CreateResidentDto,
     @Headers('idempotency-key') idempotencyKey: string,
   ) {
@@ -61,8 +61,8 @@ export class ResidentController {
       throw new BadRequestException('Idempotency-Key header is required');
     }
     const result = await this.residentService.createResident(
-      user.orgId,
-      user.userId,
+      user.organizationId,
+      user.id,
       dto,
       idempotencyKey,
     );
@@ -71,23 +71,23 @@ export class ResidentController {
 
   @Get(':id')
   async getResident(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    const result = await this.residentService.getResident(user.orgId, id);
+    const result = await this.residentService.getResident(user.organizationId, id);
     return wrapSuccess(result, 'v1');
   }
 
   @Patch(':id')
   async updateResident(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateResidentDto,
   ) {
     const result = await this.residentService.updateResident(
-      user.orgId,
+      user.organizationId,
       id,
-      user.userId,
+      user.id,
       dto,
     );
     return wrapSuccess(result, 'v1');
@@ -95,7 +95,7 @@ export class ResidentController {
 
   @Post(':id/assign-bed')
   async assignBed(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignBedDto,
     @Headers('idempotency-key') idempotencyKey: string,
@@ -104,10 +104,10 @@ export class ResidentController {
       throw new BadRequestException('Idempotency-Key header is required');
     }
     const result = await this.residentService.assignBed(
-      user.orgId,
+      user.organizationId,
       id,
       dto.bedId,
-      user.userId,
+      user.id,
       idempotencyKey,
     );
     return wrapSuccess(result, 'v1');
@@ -115,7 +115,7 @@ export class ResidentController {
 
   @Post(':id/vacate')
   async vacateResident(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VacateResidentDto,
     @Headers('idempotency-key') idempotencyKey: string,
@@ -124,9 +124,9 @@ export class ResidentController {
       throw new BadRequestException('Idempotency-Key header is required');
     }
     const result = await this.residentService.vacateResident(
-      user.orgId,
+      user.organizationId,
       id,
-      user.userId,
+      user.id,
       dto.vacateDate,
       idempotencyKey,
     );
@@ -135,7 +135,7 @@ export class ResidentController {
 
   @Post(':id/transfer')
   async transferResident(
-    @CurrentUser() user: CurrentUserPayload,
+    @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: TransferResidentDto,
     @Headers('idempotency-key') idempotencyKey: string,
@@ -144,10 +144,10 @@ export class ResidentController {
       throw new BadRequestException('Idempotency-Key header is required');
     }
     const result = await this.residentService.transferResident(
-      user.orgId,
+      user.organizationId,
       id,
       dto.newBedId,
-      user.userId,
+      user.id,
       idempotencyKey,
     );
     return wrapSuccess(result, 'v1');

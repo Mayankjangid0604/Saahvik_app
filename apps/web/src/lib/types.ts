@@ -222,3 +222,27 @@ export interface OccupancyBed {
   status: BedStatus;
   residentName: string | null;
 }
+
+// ---- Dashboard ----
+export interface DashboardSummary {
+  totalResidents: number;
+  totalBeds: number;
+  occupancyRate: number;
+  totalDuesPaisa: string;
+  totalCollectedThisMonthPaisa: string;
+  recentAdmissions: {
+    id: string;
+    fullName: string;
+    admissionDate: string;
+    bedLabel: string | null;
+    roomNumber: string | null;
+    wingName: string | null;
+  }[];
+  recentPayments: {
+    id: string;
+    residentName: string;
+    amountPaisa: string;
+    method: PaymentMethod;
+    paidOn: string;
+  }[];
+}

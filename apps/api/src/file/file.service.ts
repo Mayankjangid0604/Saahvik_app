@@ -1,7 +1,6 @@
 import {
   Injectable,
   Inject,
-  NotFoundException,
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
@@ -27,6 +26,16 @@ export class FileService {
     const storageType = this.configService.get<string>('STORAGE_TYPE') || 'local';
     this.storage = storageType === 's3' ? this.s3Storage : this.localStorage;
     this.logger.log(`File storage configured: ${storageType}`);
+  }
+
+  /**
+   * Store a buffer under a caller-chosen deterministic key (e.g. a payment
+   * receipt keyed by payment ID) rather than a random uuid. The key must be
+   * prefixed with the org ID so the existing ownership checks in this
+   * service and FileController continue to apply.
+   */
+  async uploadBuffer(key: string, buffer: Buffer, contentType: string): Promise<void> {
+    await this.storage.upload(key, buffer, contentType);
   }
 
   async upload(

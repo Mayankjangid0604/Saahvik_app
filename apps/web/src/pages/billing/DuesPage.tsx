@@ -19,7 +19,7 @@ export default function DuesPage() {
     queryKey: ['dues', page, showSettled],
     queryFn: async () =>
       unwrap<PaginatedResult<Dues>>(
-        await api.get('/billing/dues', {
+        await api.get('/dues', {
           params: { page, pageSize: PAGE_SIZE, settled: showSettled },
         }),
       ),

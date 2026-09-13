@@ -147,6 +147,7 @@ Financial and lifecycle writes require an `Idempotency-Key` header. Duplicate ke
 - `POST /auth/resend-otp` - Resend verification OTP
 - `POST /auth/forgot-password` - Request password reset
 - `POST /auth/reset-password` - Reset password
+- `GET /users/me` - Current user's profile (id, name, email, role)
 
 ### Organization
 - `GET /organizations/me` - Get organization details
@@ -157,13 +158,14 @@ Financial and lifecycle writes require an `Idempotency-Key` header. Duplicate ke
 
 ### Property
 - `GET /properties/me` - Get property
-- `PATCH /properties/me` - Update property
+- `PATCH /properties/me` - Update property (owner only)
 - `POST /properties/me/wings` - Create wing
 - `GET /properties/me/wings` - List wings
 - `POST /properties/me/rooms` - Create rooms (bulk)
 - `GET /properties/me/rooms` - List rooms
-- `POST /properties/me/beds` - Create beds (bulk)
-- `GET /properties/me/occupancy` - Get occupancy data
+- `POST /properties/me/rooms/:roomId/beds` - Create beds (bulk)
+- `GET /properties/me/rooms/:roomId/beds` - List beds in a room
+- `GET /properties/me/occupancy` - Get occupancy data (rooms with per-bed status and resident name)
 
 ### Residents
 - `GET /residents` - List residents (paginated, filterable)
@@ -176,21 +178,25 @@ Financial and lifecycle writes require an `Idempotency-Key` header. Duplicate ke
 - `POST /residents/:id/transfer` - Transfer resident (Idempotency-Key required)
 
 ### Billing
-- `POST /billing/fee-structure` - Set fee structure
-- `POST /billing/payments` - Record payment (Idempotency-Key required)
-- `GET /billing/payments` - List payments (paginated)
-- `GET /billing/payments/:id/receipt` - Download payment receipt (PDF)
-- `GET /billing/dues` - List dues (paginated)
-- `GET /billing/dues/resident/:id` - Get resident dues
-- `POST /billing/razorpay/order` - Create Razorpay order
+Payments, fee structures, and dues are nested under the resident they belong
+to (there is no org-wide payment ledger endpoint) — only the dues list is
+org-wide.
+- `POST /residents/:id/fee-structure` - Set fee structure (owner only)
+- `GET /residents/:id/fee-structure` - Get current fee structure
+- `POST /residents/:id/payments` - Record payment (Idempotency-Key required)
+- `GET /residents/:id/payments` - List a resident's payments (paginated)
+- `GET /residents/:id/payments/:paymentId/receipt` - Get the receipt's storage key; fetch the PDF itself from `GET /files/:key`
+- `GET /dues` - Org-wide dues list (paginated)
+- `GET /residents/:id/dues` - Get a resident's dues
+- `POST /residents/:id/payments/razorpay-order` - Create Razorpay order (Beginner)
 - `POST /billing/razorpay/webhook` - Razorpay webhook
 
 ### Reports
 - `GET /reports/occupancy` - Occupancy report
 - `GET /reports/dues` - Dues report
 - `GET /reports/residents` - Resident list report
-- `GET /reports/collection` - Monthly collection report
-- `GET /reports/:type/export` - Export report (PDF/Excel)
+- `GET /reports/monthly-collection` - Monthly collection report
+- `GET /reports/:reportType/export?format=pdf|excel` - Export report (`reportType` one of `occupancy`, `dues`, `residents`, `monthly-collection`)
 
 ### Notifications
 - `POST /notifications/send` - Send notification
@@ -259,13 +265,46 @@ Saahvik_app/
 
 ## Running Tests
 
+E2E tests run against a dedicated database (`saahvik_test`, separate from
+the `saahvik` dev database), so they can freely create/delete data without
+touching anything you're testing manually.
+
 ```bash
+# Create and migrate the test database (one-time setup)
+sudo -u postgres psql -c "CREATE DATABASE saahvik_test OWNER saahvik;"
+cd apps/api
+DATABASE_URL="postgresql://saahvik:saahvik@localhost:5432/saahvik_test?schema=public" npx prisma migrate deploy
+
 # Unit tests
 pnpm test
 
-# E2E tests (requires running database)
-cd apps/api && pnpm test:e2e
+# E2E tests (includes the tenant-isolation suite and the bed-occupancy
+# DB-constraint regression test)
+pnpm test:e2e
 ```
+
+### What the tests cover
+
+- **Auth** (`src/auth/auth.service.spec.ts`): signup, login, OTP verify,
+  password reset, invalid-credential rejection.
+- **Billing** (`src/billing/billing.service.spec.ts`): fee structure,
+  idempotent payment recording, dues pagination.
+- **Tenant isolation** (`test/tenant-isolation.e2e-spec.ts`): two
+  organizations created through the real signup/property/resident/billing/
+  notification/file APIs, then 23 assertions that Organization A can never
+  read or write Organization B's residents, payments, dues, fee structures,
+  notification templates, files, audit logs, dashboard, or occupancy data.
+- **Bed occupancy constraint** (`test/bed-occupancy-constraint.e2e-spec.ts`):
+  proves the partial unique index `resident(bed_id) WHERE status = 'active'`
+  rejects a second active resident on an already-occupied bed at the
+  database level, and that a vacated resident's retained `bed_id` doesn't
+  block a new admission to that bed.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push/PR: lint, typecheck, unit
+tests, e2e tests (against a Postgres 16 service container), and build, for
+both `apps/api` and `apps/web`.
 
 ## License
 

@@ -6,14 +6,8 @@ import {
 } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser } from '../common/decorators';
+import { CurrentUser, RequestUser } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
-
-interface AuthUser {
-  userId: string;
-  orgId: string;
-  role: string;
-}
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard)
@@ -24,8 +18,8 @@ export class DashboardController {
   ) {}
 
   @Get()
-  async getDashboard(@CurrentUser() user: AuthUser) {
-    const data = await this.dashboardService.getDashboardSummary(user.orgId);
+  async getDashboard(@CurrentUser() user: RequestUser) {
+    const data = await this.dashboardService.getDashboardSummary(user.organizationId);
     return wrapSuccess(data, 'v1');
   }
 }

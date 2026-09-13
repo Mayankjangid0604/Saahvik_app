@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: saahvik
+          POSTGRES_PASSWORD: saahvik
+          POSTGRES_DB: saahvik_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saahvik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://saahvik:saahvik@localhost:5432/saahvik_test?schema=public
+      JWT_SECRET: ci-test-secret
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prisma generate
+        run: npx prisma generate
+        working-directory: apps/api
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+        working-directory: apps/api
+      - name: Lint
+        run: pnpm --filter @saahvik/api lint
+      - name: Typecheck
+        run: pnpm --filter @saahvik/api typecheck
+      - name: Unit tests
+        run: pnpm --filter @saahvik/api test
+      - name: E2E tests
+        run: pnpm --filter @saahvik/api test:e2e
+      - name: Build
+        run: pnpm --filter @saahvik/api build
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm --filter @saahvik/web lint
+      - name: Build (includes typecheck via tsc -b)
+        run: pnpm --filter @saahvik/web build

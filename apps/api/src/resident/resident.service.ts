@@ -188,6 +188,12 @@ export class ResidentService {
         feeStructures: {
           orderBy: { effectiveFrom: 'desc' },
         },
+        payments: {
+          orderBy: { paidOn: 'desc' },
+        },
+        dues: {
+          orderBy: { dueSince: 'desc' },
+        },
       },
     });
 
@@ -446,11 +452,14 @@ export class ResidentService {
         data: { status: 'occupied' },
       });
 
+      // A bed transfer moves the resident to a new bed while they remain an
+      // active resident of the property. Status must stay 'active' so the
+      // partial unique index on resident(bed_id) WHERE status = 'active'
+      // continues to protect the newly assigned bed from double-booking.
       const updated = await tx.resident.update({
         where: { id: residentId },
         data: {
           bedId: newBedId,
-          status: 'transferred',
         },
       });
 

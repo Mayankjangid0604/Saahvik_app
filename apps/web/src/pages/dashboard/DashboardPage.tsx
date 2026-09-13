@@ -21,51 +21,37 @@ import api, { unwrap } from '@/lib/api';
 import { formatRupees } from '@/lib/format';
 import { PageLoader } from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
-import type { OccupancyData, PaginatedResult, Resident, Dues, Payment } from '@/lib/types';
+import type { OccupancyData, DashboardSummary } from '@/lib/types';
 import { format } from 'date-fns';
 
 const PIE_COLORS = ['#22c55e', '#ef4444', '#eab308'];
 
 export default function DashboardPage() {
+  const summaryQuery = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: async () => unwrap<DashboardSummary>(await api.get('/dashboard')),
+  });
+
   const occupancyQuery = useQuery({
     queryKey: ['occupancy'],
     queryFn: async () =>
       unwrap<OccupancyData>(await api.get('/properties/me/occupancy')),
   });
 
-  const residentsQuery = useQuery({
-    queryKey: ['residents', 'recent'],
-    queryFn: async () =>
-      unwrap<PaginatedResult<Resident>>(
-        await api.get('/residents', { params: { page: 1, pageSize: 5, sortBy: 'createdAt', sortDir: 'desc' } }),
-      ),
-  });
+  if (summaryQuery.isLoading || occupancyQuery.isLoading) return <PageLoader />;
+  if (summaryQuery.isError || occupancyQuery.isError)
+    return (
+      <ErrorMessage
+        message="Failed to load dashboard data"
+        onRetry={() => {
+          summaryQuery.refetch();
+          occupancyQuery.refetch();
+        }}
+      />
+    );
 
-  const duesQuery = useQuery({
-    queryKey: ['dues', 'summary'],
-    queryFn: async () =>
-      unwrap<PaginatedResult<Dues>>(
-        await api.get('/billing/dues', { params: { page: 1, pageSize: 100, settled: false } }),
-      ),
-  });
-
-  const paymentsQuery = useQuery({
-    queryKey: ['payments', 'recent'],
-    queryFn: async () =>
-      unwrap<PaginatedResult<Payment>>(
-        await api.get('/billing/payments', { params: { page: 1, pageSize: 5, sortDir: 'desc' } }),
-      ),
-  });
-
-  if (occupancyQuery.isLoading) return <PageLoader />;
-  if (occupancyQuery.isError)
-    return <ErrorMessage message="Failed to load dashboard data" onRetry={() => occupancyQuery.refetch()} />;
-
+  const summary = summaryQuery.data;
   const occ = occupancyQuery.data;
-  const totalDuesPaisa = duesQuery.data?.items.reduce(
-    (sum, d) => sum + parseInt(String(d.amountDuePaisa), 10),
-    0,
-  ) ?? 0;
 
   const pieData = occ
     ? [
@@ -98,19 +84,19 @@ export default function DashboardPage() {
   const stats = [
     {
       label: 'Total Beds',
-      value: occ?.totalBeds ?? 0,
+      value: summary?.totalBeds ?? 0,
       icon: HomeIcon,
       color: 'bg-blue-50 text-blue-600',
     },
     {
       label: 'Occupancy Rate',
-      value: `${Math.round(occ?.occupancyRate ?? 0)}%`,
+      value: `${Math.round(summary?.occupancyRate ?? 0)}%`,
       icon: UserGroupIcon,
       color: 'bg-green-50 text-green-600',
     },
     {
       label: 'Total Dues',
-      value: formatRupees(totalDuesPaisa),
+      value: formatRupees(summary?.totalDuesPaisa ?? '0'),
       icon: CurrencyRupeeIcon,
       color: 'bg-amber-50 text-amber-600',
     },
@@ -203,51 +189,39 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Recent Admissions
           </h3>
-          {residentsQuery.isLoading ? (
-            <PageLoader />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b">
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Date</th>
-                    <th className="pb-2 font-medium">Status</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 border-b">
+                  <th className="pb-2 font-medium">Name</th>
+                  <th className="pb-2 font-medium">Date</th>
+                  <th className="pb-2 font-medium">Bed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(summary?.recentAdmissions ?? []).map((r) => (
+                  <tr key={r.id}>
+                    <td className="py-2 font-medium text-gray-900">{r.fullName}</td>
+                    <td className="py-2 text-gray-500">
+                      {format(new Date(r.admissionDate), 'dd MMM yyyy')}
+                    </td>
+                    <td className="py-2 text-gray-500">
+                      {r.bedLabel
+                        ? [r.roomNumber, r.bedLabel].filter(Boolean).join(' / ')
+                        : 'Unassigned'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(residentsQuery.data?.items ?? []).map((r) => (
-                    <tr key={r.id}>
-                      <td className="py-2 font-medium text-gray-900">{r.fullName}</td>
-                      <td className="py-2 text-gray-500">
-                        {format(new Date(r.admissionDate), 'dd MMM yyyy')}
-                      </td>
-                      <td className="py-2">
-                        <span
-                          className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${
-                            r.status === 'active'
-                              ? 'bg-green-100 text-green-700'
-                              : r.status === 'vacated'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-yellow-100 text-yellow-700'
-                          }`}
-                        >
-                          {r.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {!residentsQuery.data?.items.length && (
-                    <tr>
-                      <td colSpan={3} className="py-4 text-center text-gray-400">
-                        No recent admissions
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+                {!summary?.recentAdmissions.length && (
+                  <tr>
+                    <td colSpan={3} className="py-4 text-center text-gray-400">
+                      No recent admissions
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Recent Payments */}
@@ -255,43 +229,39 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Recent Payments
           </h3>
-          {paymentsQuery.isLoading ? (
-            <PageLoader />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b">
-                    <th className="pb-2 font-medium">Resident</th>
-                    <th className="pb-2 font-medium">Amount</th>
-                    <th className="pb-2 font-medium">Date</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 border-b">
+                  <th className="pb-2 font-medium">Resident</th>
+                  <th className="pb-2 font-medium">Amount</th>
+                  <th className="pb-2 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(summary?.recentPayments ?? []).map((p) => (
+                  <tr key={p.id}>
+                    <td className="py-2 font-medium text-gray-900">
+                      {p.residentName}
+                    </td>
+                    <td className="py-2 text-gray-700">
+                      {formatRupees(p.amountPaisa)}
+                    </td>
+                    <td className="py-2 text-gray-500">
+                      {format(new Date(p.paidOn), 'dd MMM yyyy')}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(paymentsQuery.data?.items ?? []).map((p) => (
-                    <tr key={p.id}>
-                      <td className="py-2 font-medium text-gray-900">
-                        {p.resident?.fullName ?? 'Unknown'}
-                      </td>
-                      <td className="py-2 text-gray-700">
-                        {formatRupees(p.amountPaisa)}
-                      </td>
-                      <td className="py-2 text-gray-500">
-                        {format(new Date(p.paidOn), 'dd MMM yyyy')}
-                      </td>
-                    </tr>
-                  ))}
-                  {!paymentsQuery.data?.items.length && (
-                    <tr>
-                      <td colSpan={3} className="py-4 text-center text-gray-400">
-                        No recent payments
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+                {!summary?.recentPayments.length && (
+                  <tr>
+                    <td colSpan={3} className="py-4 text-center text-gray-400">
+                      No recent payments
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

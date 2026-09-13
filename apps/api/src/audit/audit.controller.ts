@@ -8,14 +8,8 @@ import {
 } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser } from '../common/decorators';
+import { CurrentUser, RequestUser } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
-
-interface AuthUser {
-  userId: string;
-  orgId: string;
-  role: string;
-}
 
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard)
@@ -26,7 +20,7 @@ export class AuditController {
 
   @Get()
   async getAuditLogs(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('entityType') entityType?: string,
@@ -39,7 +33,7 @@ export class AuditController {
       throw new ForbiddenException('Only owners can view audit logs');
     }
 
-    const data = await this.auditService.getAuditLogs(user.orgId, {
+    const data = await this.auditService.getAuditLogs(user.organizationId, {
       page: page ? parseInt(page, 10) : undefined,
       pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
       entityType,

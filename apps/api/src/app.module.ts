@@ -1,3 +1,4 @@
+import './common/bigint-json-patch';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';

@@ -1,10 +1,11 @@
-import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationChannel, NotificationStatus } from '@prisma/client';
 import { EmailProvider } from './providers/email.provider';
 import { SmsProvider } from './providers/sms.provider';
 import { WhatsappProvider } from './providers/whatsapp.provider';
 import { NotificationProvider } from './providers/notification-provider.interface';
+import { parsePagination, PaginationQuery } from '../common/pagination';
 
 @Injectable()
 export class NotificationService {
@@ -22,6 +23,22 @@ export class NotificationService {
       [NotificationChannel.sms]: this.smsProvider,
       [NotificationChannel.whatsapp]: this.whatsappProvider,
     };
+  }
+
+  async getNotifications(orgId: string, query: PaginationQuery) {
+    const { page, pageSize, skip, take } = parsePagination(query);
+
+    const [items, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where: { organizationId: orgId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.notification.count({ where: { organizationId: orgId } }),
+    ]);
+
+    return { items, total, page, pageSize };
   }
 
   private getProvider(channel: NotificationChannel): NotificationProvider {
@@ -180,7 +197,7 @@ export class NotificationService {
       where: { id: templateId, organizationId: orgId },
     });
     if (!template) {
-      throw new BadRequestException('Template not found');
+      throw new NotFoundException('Template not found');
     }
 
     return this.prisma.notificationTemplate.update({

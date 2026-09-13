@@ -5,14 +5,16 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   UseGuards,
   ParseUUIDPipe,
   Inject,
 } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser } from '../common/decorators';
+import { CurrentUser, RequestUser, Roles, RolesGuard } from '../common/decorators';
 import { wrapSuccess } from '../common/response';
+import { UserRole } from '@prisma/client';
 import {
   SendNotificationDto,
   BroadcastNotificationDto,
@@ -20,12 +22,6 @@ import {
   UpdateTemplateDto,
   ScheduleNotificationDto,
 } from './dto';
-
-interface AuthUser {
-  userId: string;
-  orgId: string;
-  role: string;
-}
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
@@ -35,13 +31,26 @@ export class NotificationController {
     private readonly notificationService: NotificationService,
   ) {}
 
+  @Get()
+  async getNotifications(
+    @CurrentUser() user: RequestUser,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const result = await this.notificationService.getNotifications(user.organizationId, {
+      page: page ? parseInt(page, 10) : undefined,
+      pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+    });
+    return wrapSuccess(result, 'v1');
+  }
+
   @Post('send')
   async send(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Body() dto: SendNotificationDto,
   ) {
     const result = await this.notificationService.sendNotification(
-      user.orgId,
+      user.organizationId,
       dto.channel,
       dto.to,
       dto.subject,
@@ -52,11 +61,11 @@ export class NotificationController {
 
   @Post('broadcast')
   async broadcast(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Body() dto: BroadcastNotificationDto,
   ) {
     const result = await this.notificationService.broadcastNotification(
-      user.orgId,
+      user.organizationId,
       dto.channel,
       dto.subject,
       dto.body,
@@ -66,31 +75,35 @@ export class NotificationController {
   }
 
   @Get('templates')
-  async getTemplates(@CurrentUser() user: AuthUser) {
-    const templates = await this.notificationService.getTemplates(user.orgId);
+  async getTemplates(@CurrentUser() user: RequestUser) {
+    const templates = await this.notificationService.getTemplates(user.organizationId);
     return wrapSuccess(templates, 'v1');
   }
 
   @Post('templates')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.owner)
   async createTemplate(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Body() dto: CreateTemplateDto,
   ) {
     const template = await this.notificationService.createTemplate(
-      user.orgId,
+      user.organizationId,
       dto,
     );
     return wrapSuccess(template, 'v1');
   }
 
   @Patch('templates/:id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.owner)
   async updateTemplate(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTemplateDto,
   ) {
     const template = await this.notificationService.updateTemplate(
-      user.orgId,
+      user.organizationId,
       id,
       dto,
     );
@@ -99,11 +112,11 @@ export class NotificationController {
 
   @Post('schedule')
   async schedule(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: RequestUser,
     @Body() dto: ScheduleNotificationDto,
   ) {
     const notification = await this.notificationService.scheduleNotification(
-      user.orgId,
+      user.organizationId,
       dto,
     );
     return wrapSuccess(notification, 'v1');

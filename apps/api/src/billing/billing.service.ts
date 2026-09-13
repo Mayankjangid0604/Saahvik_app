@@ -5,11 +5,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
-  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReceiptService } from './receipt.service';
+import { FileService } from '../file/file.service';
 import { ErrorCodes } from '../common/error-codes';
 import { parsePagination, PaginationQuery } from '../common/pagination';
 import { PaymentMethod } from '@prisma/client';
@@ -23,6 +23,7 @@ export class BillingService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ReceiptService) private readonly receiptService: ReceiptService,
     @Inject(ConfigService) private readonly configService: ConfigService,
+    @Inject(FileService) private readonly fileService: FileService,
   ) {}
 
   // ─── Helpers ──────────────────────────────────────────────────────────
@@ -172,7 +173,6 @@ export class BillingService {
         }
       }
 
-      // Generate receipt PDF
       const resident = await tx.resident.findUniqueOrThrow({
         where: { id: residentId },
       });
@@ -180,35 +180,35 @@ export class BillingService {
         where: { id: orgId },
       });
 
-      const pdfBuffer = await this.receiptService.generateReceipt(
-        {
-          id: payment.id,
-          amountPaisa: payment.amountPaisa,
-          method: payment.method,
-          paidOn: payment.paidOn,
-          createdAt: payment.createdAt,
-        },
-        { fullName: resident.fullName, phone: resident.phone, email: resident.email },
-        { name: org.name },
-      );
-
-      // Store PDF key (the key is the payment ID; actual storage would be S3/GCS)
-      const receiptPdfKey = `receipts/${orgId}/${payment.id}.pdf`;
-      await tx.payment.update({
-        where: { id: payment.id },
-        data: { receiptPdfKey },
-      });
-
-      // In production, upload pdfBuffer to object storage here.
-      // For now, the PDF buffer is generated but not persisted to cloud storage.
-      this.logger.log(
-        `Receipt PDF generated for payment ${payment.id}, size=${pdfBuffer.length} bytes`,
-      );
-
-      return { ...payment, receiptPdfKey };
+      return { payment, resident, org };
     });
 
-    const serialized = this.serializeBigIntFields(result);
+    // Generate and persist the receipt PDF outside the DB transaction (it's
+    // an external storage write, not something the transaction should hold
+    // a connection open for). The key is prefixed with orgId so the file
+    // ownership checks in FileService/FileController apply to it like any
+    // other stored file.
+    const { payment, resident, org } = result;
+    const pdfBuffer = await this.receiptService.generateReceipt(
+      {
+        id: payment.id,
+        amountPaisa: payment.amountPaisa,
+        method: payment.method,
+        paidOn: payment.paidOn,
+        createdAt: payment.createdAt,
+      },
+      { fullName: resident.fullName, phone: resident.phone, email: resident.email },
+      { name: org.name },
+    );
+
+    const receiptPdfKey = `${orgId}/receipts/${payment.id}.pdf`;
+    await this.fileService.uploadBuffer(receiptPdfKey, pdfBuffer, 'application/pdf');
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { receiptPdfKey },
+    });
+
+    const serialized = this.serializeBigIntFields({ ...payment, receiptPdfKey });
 
     // Store idempotency record
     await this.prisma.idempotencyRecord.create({
@@ -218,7 +218,7 @@ export class BillingService {
       },
     });
 
-    await this.auditLog(orgId, userId, 'RECORD_PAYMENT', 'Payment', result.id, {
+    await this.auditLog(orgId, userId, 'RECORD_PAYMENT', 'Payment', payment.id, {
       residentId,
       amountPaisa: data.amountPaisa.toString(),
       method: data.method,
@@ -424,10 +424,18 @@ export class BillingService {
       throw new BadRequestException('amountPaisa must be a positive value');
     }
 
+    const keyId = this.configService.get<string>('RAZORPAY_KEY_ID');
+    const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
+    if (!keyId || !keySecret) {
+      throw new BadRequestException(
+        'Razorpay is not configured for this deployment (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET missing)',
+      );
+    }
+
     const Razorpay = await import('razorpay');
     const razorpay = new Razorpay.default({
-      key_id: this.configService.get<string>('RAZORPAY_KEY_ID') || '',
-      key_secret: this.configService.get<string>('RAZORPAY_KEY_SECRET') || '',
+      key_id: keyId,
+      key_secret: keySecret,
     });
 
     const order = await razorpay.orders.create({

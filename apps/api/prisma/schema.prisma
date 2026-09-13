@@ -168,8 +168,8 @@ model Bed {
   status     BedStatus @default(vacant)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  room     Room      @relation(fields: [roomId], references: [id])
-  resident Resident?
+  room      Room       @relation(fields: [roomId], references: [id])
+  residents Resident[]
 
   @@index([roomId])
   @@map("bed")
@@ -197,7 +197,7 @@ model Resident {
   payments      Payment[]
   dues          Dues[]
 
-  @@unique([bedId], map: "resident_active_bed_unique")
+  @@index([bedId])
   @@index([organizationId])
   @@map("resident")
 }

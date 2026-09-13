@@ -24,21 +24,13 @@ export default function StaffManagementPage() {
   const [formPassword, setFormPassword] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Only owners can manage staff
-  if (user?.role !== 'owner') {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-gray-600">
-          Only organization owners can manage staff.
-        </p>
-      </div>
-    );
-  }
+  const isOwner = user?.role === 'owner';
 
   const { data: staff, isLoading, isError, refetch } = useQuery({
     queryKey: ['org-staff'],
     queryFn: async () =>
       unwrap<StaffMember[]>(await api.get('/organizations/me/staff')),
+    enabled: isOwner,
   });
 
   const createMutation = useMutation({
@@ -84,6 +76,17 @@ export default function StaffManagementPage() {
     e.preventDefault();
     createMutation.mutate();
   };
+
+  // Only owners can manage staff
+  if (!isOwner) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <p className="text-gray-600">
+          Only organization owners can manage staff.
+        </p>
+      </div>
+    );
+  }
 
   if (isLoading) return <PageLoader />;
   if (isError)

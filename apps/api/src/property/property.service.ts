@@ -189,74 +189,65 @@ export class PropertyService {
   async getOccupancy(orgId: string) {
     const property = await this.findPropertyByOrg(orgId);
 
-    // Overall bed counts by status
-    const overallCounts = await this.prisma.bed.groupBy({
-      by: ['status'],
-      where: { room: { propertyId: property.id } },
-      _count: { id: true },
-    });
-
-    let totalBeds = 0;
-    let occupied = 0;
-    let vacant = 0;
-    let maintenance = 0;
-
-    for (const row of overallCounts) {
-      const count = row._count.id;
-      totalBeds += count;
-      if (row.status === BedStatus.occupied) occupied = count;
-      else if (row.status === BedStatus.vacant) vacant = count;
-      else if (row.status === BedStatus.maintenance) maintenance = count;
-    }
-
-    // Per-wing breakdown
-    const wings = await this.prisma.wing.findMany({
+    const rooms = await this.prisma.room.findMany({
       where: { propertyId: property.id },
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
-
-    const wingBedCounts = await this.prisma.bed.groupBy({
-      by: ['status'],
-      where: {
-        room: {
-          propertyId: property.id,
-          wingId: { not: null },
+      include: {
+        wing: { select: { name: true } },
+        beds: {
+          orderBy: { bedLabel: 'asc' },
         },
       },
-      _count: { id: true },
+      orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
     });
 
-    // Get per-wing data with a raw approach via rooms
-    const wingData = await Promise.all(
-      wings.map(async (wing) => {
-        const counts = await this.prisma.bed.groupBy({
-          by: ['status'],
-          where: { room: { wingId: wing.id } },
-          _count: { id: true },
-        });
+    const bedIds = rooms.flatMap((r) => r.beds.map((b) => b.id));
 
-        let wingTotal = 0;
-        let wingOccupied = 0;
-        for (const row of counts) {
-          wingTotal += row._count.id;
-          if (row.status === BedStatus.occupied) wingOccupied = row._count.id;
-        }
+    const activeResidents = await this.prisma.resident.findMany({
+      where: { bedId: { in: bedIds }, status: 'active' },
+      select: { bedId: true, fullName: true },
+    });
+    const residentByBedId = new Map(
+      activeResidents.map((r) => [r.bedId as string, r.fullName]),
+    );
+
+    let totalBeds = 0;
+    let occupiedBeds = 0;
+    let vacantBeds = 0;
+    let maintenanceBeds = 0;
+
+    const roomsWithBeds = rooms.map((room) => {
+      const beds = room.beds.map((bed) => {
+        totalBeds++;
+        if (bed.status === BedStatus.occupied) occupiedBeds++;
+        else if (bed.status === BedStatus.vacant) vacantBeds++;
+        else if (bed.status === BedStatus.maintenance) maintenanceBeds++;
 
         return {
-          name: wing.name,
-          total: wingTotal,
-          occupied: wingOccupied,
+          id: bed.id,
+          bedLabel: bed.bedLabel,
+          status: bed.status,
+          residentName: residentByBedId.get(bed.id) ?? null,
         };
-      }),
-    );
+      });
+
+      return {
+        id: room.id,
+        roomNumber: room.roomNumber,
+        floor: room.floor,
+        wingName: room.wing?.name ?? null,
+        beds,
+      };
+    });
+
+    const occupancyRate = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
 
     return {
       totalBeds,
-      occupied,
-      vacant,
-      maintenance,
-      wings: wingData,
+      occupiedBeds,
+      vacantBeds,
+      maintenanceBeds,
+      occupancyRate,
+      rooms: roomsWithBeds,
     };
   }
 }

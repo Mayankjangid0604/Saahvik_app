@@ -2,8 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BillingService } from './billing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReceiptService } from './receipt.service';
+import { FileService } from '../file/file.service';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 const mockPrisma = {
   feeStructure: {
@@ -12,6 +12,7 @@ const mockPrisma = {
   },
   payment: {
     create: jest.fn(),
+    update: jest.fn(),
     findUnique: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
@@ -37,6 +38,10 @@ const mockReceiptService = {
   generateReceipt: jest.fn().mockResolvedValue(Buffer.from('pdf')),
 };
 
+const mockFileService = {
+  uploadBuffer: jest.fn().mockResolvedValue(undefined),
+};
+
 const mockConfigService = {
   get: jest.fn((key: string) => {
     if (key === 'RAZORPAY_KEY_ID') return 'rzp_test_xxx';
@@ -57,6 +62,7 @@ describe('BillingService', () => {
         BillingService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ReceiptService, useValue: mockReceiptService },
+        { provide: FileService, useValue: mockFileService },
         { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
@@ -80,7 +86,7 @@ describe('BillingService', () => {
       });
       mockPrisma.auditLog.create.mockResolvedValue({});
 
-      const result = await service.setFeeStructure('org-1', feeData.residentId, 'user-1', feeData.monthlyRentPaisa, '2024-01-01');
+      await service.setFeeStructure('org-1', feeData.residentId, 'user-1', feeData.monthlyRentPaisa, '2024-01-01');
 
       expect(mockPrisma.feeStructure.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
