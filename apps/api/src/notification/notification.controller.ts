@@ -114,6 +114,8 @@ export class NotificationController {
   }
 
   @Post('schedule')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('notifications:send')
   async schedule(
     @CurrentUser() user: RequestUser,
     @Body() dto: ScheduleNotificationDto,

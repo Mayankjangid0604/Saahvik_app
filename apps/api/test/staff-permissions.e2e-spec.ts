@@ -249,6 +249,78 @@ describe('Staff Permissions (e2e)', () => {
     expect(deleteRes.status).toBe(200);
   });
 
+  it('staff without notifications:send cannot schedule a notification, owner grants it, then succeeds', async () => {
+    // At this point in the suite staffToken's permissions include files:manage
+    // (set by the previous test) but do NOT include notifications:send —
+    // the previous PATCH set permissions explicitly to a list that omitted it.
+    // We reset to confirm the boundary.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)
+      .set(authed(ownerToken))
+      .send({
+        permissions: [
+          'residents:manage',
+          'payments:record',
+          'reports:view',
+          'files:manage',
+        ],
+      })
+      .expect(200);
+
+    const deniedRes = await request(app.getHttpServer())
+      .post('/api/v1/notifications/schedule')
+      .set(authed(staffToken))
+      .send({
+        channel: 'email',
+        to: 'test@example.com',
+        subject: 'Test',
+        body: 'Test body',
+        scheduledAt: new Date(Date.now() + 60000).toISOString(),
+      });
+    expect(deniedRes.status).toBe(403);
+
+    // Owner grants notifications:send — no new login, same staff JWT.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)
+      .set(authed(ownerToken))
+      .send({
+        permissions: [
+          'residents:manage',
+          'payments:record',
+          'reports:view',
+          'files:manage',
+          'notifications:send',
+        ],
+      })
+      .expect(200);
+
+    const allowedRes = await request(app.getHttpServer())
+      .post('/api/v1/notifications/schedule')
+      .set(authed(staffToken))
+      .send({
+        channel: 'email',
+        to: 'test@example.com',
+        subject: 'Test',
+        body: 'Test body',
+        scheduledAt: new Date(Date.now() + 60000).toISOString(),
+      });
+    expect(allowedRes.status).toBe(201);
+  });
+
+  it('owner always passes notifications:send check on schedule route regardless of permissions column', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/notifications/schedule')
+      .set(authed(ownerToken))
+      .send({
+        channel: 'email',
+        to: 'test@example.com',
+        subject: 'Owner Test',
+        body: 'Owner test body',
+        scheduledAt: new Date(Date.now() + 60000).toISOString(),
+      });
+    expect(res.status).toBe(201);
+  });
+
   it('rejects an unknown capability value', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)

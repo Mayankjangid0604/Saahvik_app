@@ -449,6 +449,96 @@ succeeding on both (no re-login), and a dedicated owner-bypass check
 (owner uploads and deletes regardless of the permissions column, mirroring
 the existing audit-log owner-bypass test's pattern).
 
+## Phase 3.2 — Bug Fix: `POST /notifications/schedule` Was Never Capability-Gated
+
+**Finding (independently re-verified against the actual code after Phase 3.1):**
+`notification.controller.ts` — `POST /notifications/schedule` had only the
+controller-level `@UseGuards(JwtAuthGuard)`. It had no `@UseGuards(CapabilityGuard)`
+and no `@RequireCapability(...)`, unlike its siblings `send` and `broadcast` in the
+same file, which were correctly gated behind `notifications:send`. Any authenticated
+staff login — regardless of granted capabilities — could schedule bulk/scheduled
+notifications to residents, bypassing the `notifications:send` permission boundary.
+
+This route was present before Phase 3.1 and was not caught by Phase 3.1's claimed
+controller sweep, demonstrating that Phase 3.1's sweep did not verify every route
+individually enough.
+
+**Fix applied:**
+- Added `@UseGuards(CapabilityGuard)` + `@RequireCapability('notifications:send')` to
+  the `schedule` method in `notification.controller.ts`, matching the pattern on `send`
+  and `broadcast` immediately above it in the same file.
+- No new capability introduced: scheduling a notification is the same permission
+  boundary as sending one immediately; a distinct `notifications:schedule` capability
+  would be unwarranted granularity for no real product reason.
+- `GET /notifications` and `GET /notifications/templates` remain ungated by capability
+  (read-only, consistent with every other GET route in the API).
+
+**Exhaustive route-by-route sweep (Phase 3.2):**
+
+Every `@Post`/`@Patch`/`@Put`/`@Delete` route across all controllers verified:
+
+| Controller | Route | Guard mechanism |
+|---|---|---|
+| `auth.controller.ts` | `POST /auth/signup` | Deliberately pre-auth (runs before a JWT exists) |
+| `auth.controller.ts` | `POST /auth/login` | Deliberately pre-auth |
+| `auth.controller.ts` | `POST /auth/verify-email-otp` | Deliberately pre-auth |
+| `auth.controller.ts` | `POST /auth/resend-otp` | Deliberately pre-auth |
+| `auth.controller.ts` | `POST /auth/forgot-password` | Deliberately pre-auth |
+| `auth.controller.ts` | `POST /auth/reset-password` | Deliberately pre-auth |
+| `auth.controller.ts` | `POST /auth/staff-login` | Deliberately pre-auth |
+| `billing.controller.ts` | `POST /residents/:id/fee-structure` | `@UseGuards(JwtAuthGuard, CapabilityGuard)` + `@RequireCapability('billing:manage_fee_structure')` |
+| `billing.controller.ts` | `POST /residents/:id/payments` | `@UseGuards(JwtAuthGuard, CapabilityGuard)` + `@RequireCapability('payments:record')` |
+| `billing.controller.ts` | `POST /residents/:id/payments/razorpay-order` | `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(owner, staff)` — **flagged: see note below** |
+| `billing.controller.ts` | `POST /billing/razorpay/webhook` | Deliberately unauthenticated: HMAC-signature-verified server-to-server callback, no user context to check |
+| `file.controller.ts` | `POST /files/upload` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('files:manage')` (fixed Phase 3.1) |
+| `file.controller.ts` | `DELETE /files/:key` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('files:manage')` (fixed Phase 3.1) |
+| `notification.controller.ts` | `POST /notifications/send` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('notifications:send')` |
+| `notification.controller.ts` | `POST /notifications/broadcast` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('notifications:send')` |
+| `notification.controller.ts` | `POST /notifications/templates` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('notifications:manage_templates')` |
+| `notification.controller.ts` | `PATCH /notifications/templates/:id` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('notifications:manage_templates')` |
+| `notification.controller.ts` | `POST /notifications/schedule` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('notifications:send')` **(fixed this phase)** |
+| `organization.controller.ts` | `PATCH /organizations/me` | Manual `if (user.role !== 'owner') throw ForbiddenException` |
+| `organization.controller.ts` | `POST /organizations/me/staff` | Manual `if (user.role !== 'owner') throw ForbiddenException` |
+| `organization.controller.ts` | `DELETE /organizations/me/staff/:staffId` | Manual `if (user.role !== 'owner') throw ForbiddenException` |
+| `organization.controller.ts` | `PATCH /organizations/me/staff/:staffId/permissions` | Manual `if (user.role !== 'owner') throw ForbiddenException` |
+| `organization.controller.ts` | `POST /organizations/me/cancel` | Manual `if (user.role !== 'owner') throw ForbiddenException` |
+| `organization.controller.ts` | `POST /organizations/me/reactivate` | Manual `if (user.role !== 'owner') throw ForbiddenException` |
+| `property.controller.ts` | `PATCH /properties/me` | `@UseGuards(RolesGuard)` + `@Roles(owner)` |
+| `property.controller.ts` | `POST /properties/me/wings` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('property:manage')` |
+| `property.controller.ts` | `POST /properties/me/rooms` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('property:manage')` |
+| `property.controller.ts` | `POST /properties/me/rooms/:roomId/beds` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('property:manage')` |
+| `resident.controller.ts` | `POST /residents` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('residents:manage')` |
+| `resident.controller.ts` | `PATCH /residents/:id` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('residents:manage')` |
+| `resident.controller.ts` | `POST /residents/:id/assign-bed` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('residents:manage')` |
+| `resident.controller.ts` | `POST /residents/:id/vacate` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('residents:manage')` |
+| `resident.controller.ts` | `POST /residents/:id/transfer` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('residents:manage')` |
+
+No other write routes exist (`audit`, `dashboard`, `health`, `report`, `user` controllers
+expose only GET routes; `health` is additionally unauthenticated by design).
+
+**Flagged route (not fixed this phase — flagged for owner decision):**
+`POST /residents/:id/payments/razorpay-order` uses `@Roles(owner, staff)` which,
+since the only two roles in the system are owner and staff, effectively admits any
+authenticated user regardless of their specific capabilities. Logically it should
+require `payments:record` (it is a prerequisite step in the same payment workflow
+as `POST /residents/:id/payments`, which does require that capability). This was not
+introduced by Phase 3 or Phase 3.1 — it predates the capability system — and is not
+an injection of new behaviour but a pre-existing permissive guard. Fixing it is a
+one-liner (replace `@Roles(owner, staff)` with `@UseGuards(CapabilityGuard)` +
+`@RequireCapability('payments:record')`), but is flagged here rather than fixed
+silently, as the decision belongs to the owner. If left as-is, the impact is limited:
+the route initiates a Razorpay order but does not record a payment in the system —
+the actual payment recording (which does update the database) remains gated on
+`payments:record`.
+
+**Test coverage added (Phase 3.2):**
+Extended `test/staff-permissions.e2e-spec.ts` with two new tests (9 total in the suite,
+up from 7 after Phase 3.1):
+- Staff without `notifications:send` gets 403 on `POST /notifications/schedule`; owner
+  grants the capability without re-login; same staff JWT then gets 201.
+- Owner always passes the `notifications:send` check on the schedule route regardless
+  of the permissions column.
+
 ## Phase 3 — Data Retention Decision (Security & Privacy Policy §7)
 
 **Also a disclosed product/legal decision, not inferred from code.** Two

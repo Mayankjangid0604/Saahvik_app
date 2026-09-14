@@ -203,9 +203,9 @@ org-wide.
 - `GET /reports/:reportType/export?format=pdf|excel` - Export report (`reportType` one of `occupancy`, `dues`, `residents`, `monthly-collection`)
 
 ### Notifications
-- `POST /notifications/send` - Send notification
-- `POST /notifications/broadcast` - Broadcast notification
-- `POST /notifications/schedule` - Schedule notification
+- `POST /notifications/send` - Send notification (requires `notifications:send`)
+- `POST /notifications/broadcast` - Broadcast notification (requires `notifications:send`)
+- `POST /notifications/schedule` - Schedule notification (requires `notifications:send`)
 - `GET /notifications` - List notifications
 - `GET /notifications/templates` - List templates
 - `POST /notifications/templates` - Create template
@@ -332,9 +332,10 @@ pnpm test:e2e
   real flow — a new staff member's default capabilities, a denied action
   becoming allowed the moment an owner grants it (no re-login), an unknown
   capability value rejected, a staff member unable to grant themselves
-  permissions, and (Phase 3.1) file upload/delete denied without
-  `files:manage` and allowed once granted, plus an owner-bypass check for
-  both routes.
+  permissions, (Phase 3.1) file upload/delete denied without `files:manage`
+  and allowed once granted with an owner-bypass check, and (Phase 3.2)
+  notification schedule denied without `notifications:send` and allowed once
+  granted with an owner-bypass check.
 - **Retention** (`src/retention/retention.service.spec.ts`): no-op when
   nothing is due, correct file deletion + column nulling, the exact 30-day
   cutoff calculation, and that one failed file delete doesn't block the
