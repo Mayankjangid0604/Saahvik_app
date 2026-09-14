@@ -164,8 +164,8 @@ export class BillingController {
   // ─── Razorpay ─────────────────────────────────────────────────────────
 
   @Post('residents/:id/payments/razorpay-order')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.owner, UserRole.staff)
+  @UseGuards(JwtAuthGuard, CapabilityGuard)
+  @RequireCapability('payments:record')
   async createRazorpayOrder(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) residentId: string,

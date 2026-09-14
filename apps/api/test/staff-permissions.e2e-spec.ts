@@ -321,6 +321,143 @@ describe('Staff Permissions (e2e)', () => {
     expect(res.status).toBe(201);
   });
 
+  it('staff without payments:record cannot create a Razorpay order, owner grants it, then succeeds', async () => {
+    // Razorpay is a Beginner-plan feature; upgrade the test org so the service
+    // check passes and only the capability guard decides the outcome.
+    const orgRes = await request(app.getHttpServer())
+      .get('/api/v1/organizations/me')
+      .set(authed(ownerToken))
+      .expect(200);
+    await prisma.organization.update({
+      where: { id: orgRes.body.data.id },
+      data: { subscriptionPlan: 'beginner' },
+    });
+
+    // Strip payments:record to prove the boundary — previous test left the
+    // permissions with it present, so we need an explicit reset first.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)
+      .set(authed(ownerToken))
+      .send({
+        permissions: [
+          'residents:manage',
+          'reports:view',
+          'files:manage',
+          'notifications:send',
+        ],
+      })
+      .expect(200);
+
+    // Create a dedicated room+bed so we're not blocked by occupancy from prior tests.
+    const ts1 = Date.now();
+    await request(app.getHttpServer())
+      .post('/api/v1/properties/me/rooms')
+      .set(authed(ownerToken))
+      .send({ rooms: [{ roomNumber: `RZ1-${ts1}`, floor: 5 }] });
+    const listRoomsRes = await request(app.getHttpServer())
+      .get('/api/v1/properties/me/rooms')
+      .set(authed(ownerToken))
+      .expect(200);
+    const room = listRoomsRes.body.data.items.find(
+      (r: { roomNumber: string }) => r.roomNumber === `RZ1-${ts1}`,
+    );
+    await request(app.getHttpServer())
+      .post(`/api/v1/properties/me/rooms/${room.id}/beds`)
+      .set(authed(ownerToken))
+      .send({ beds: [{ bedLabel: 'A' }] });
+    const bedsRes = await request(app.getHttpServer())
+      .get(`/api/v1/properties/me/rooms/${room.id}/beds`)
+      .set(authed(ownerToken))
+      .expect(200);
+    const bedId = bedsRes.body.data[0].id;
+    const residentRes = await request(app.getHttpServer())
+      .post('/api/v1/residents')
+      .set(authed(ownerToken))
+      .set('Idempotency-Key', `razorpay-order-test-${ts1}`)
+      .send({
+        fullName: 'Razorpay Order Test Resident',
+        admissionDate: '2026-01-01',
+        bedId,
+        guardians: [{ fullName: 'Guardian', phone: '9999999998', relationship: 'Father' }],
+      })
+      .expect(201);
+    const residentId = residentRes.body.data.id;
+
+    const deniedRes = await request(app.getHttpServer())
+      .post(`/api/v1/residents/${residentId}/payments/razorpay-order`)
+      .set(authed(staffToken))
+      .send({ amountPaisa: '50000' });
+    expect(deniedRes.status).toBe(403);
+
+    // Owner grants payments:record — no new login, same staff JWT.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)
+      .set(authed(ownerToken))
+      .send({
+        permissions: [
+          'residents:manage',
+          'payments:record',
+          'reports:view',
+          'files:manage',
+          'notifications:send',
+        ],
+      })
+      .expect(200);
+
+    // With payments:record granted, route should now pass the capability check.
+    // Razorpay itself is not configured in the test environment, so we expect
+    // either 201 (configured) or 400 (Razorpay not configured) — either means
+    // the capability guard passed. A 403 would mean the guard still blocks.
+    const allowedRes = await request(app.getHttpServer())
+      .post(`/api/v1/residents/${residentId}/payments/razorpay-order`)
+      .set(authed(staffToken))
+      .send({ amountPaisa: '50000' });
+    expect(allowedRes.status).not.toBe(403);
+  });
+
+  it('owner always passes payments:record check on razorpay-order route regardless of permissions column', async () => {
+    // Create a dedicated room+bed so we're not blocked by occupancy from prior tests.
+    const ts2 = Date.now();
+    await request(app.getHttpServer())
+      .post('/api/v1/properties/me/rooms')
+      .set(authed(ownerToken))
+      .send({ rooms: [{ roomNumber: `RZ2-${ts2}`, floor: 5 }] });
+    const listRoomsRes = await request(app.getHttpServer())
+      .get('/api/v1/properties/me/rooms')
+      .set(authed(ownerToken))
+      .expect(200);
+    const room = listRoomsRes.body.data.items.find(
+      (r: { roomNumber: string }) => r.roomNumber === `RZ2-${ts2}`,
+    );
+    await request(app.getHttpServer())
+      .post(`/api/v1/properties/me/rooms/${room.id}/beds`)
+      .set(authed(ownerToken))
+      .send({ beds: [{ bedLabel: 'A' }] });
+    const bedsRes = await request(app.getHttpServer())
+      .get(`/api/v1/properties/me/rooms/${room.id}/beds`)
+      .set(authed(ownerToken))
+      .expect(200);
+    const bedId = bedsRes.body.data[0].id;
+    const residentRes = await request(app.getHttpServer())
+      .post('/api/v1/residents')
+      .set(authed(ownerToken))
+      .set('Idempotency-Key', `razorpay-owner-test-${ts2}`)
+      .send({
+        fullName: 'Razorpay Owner Test Resident',
+        admissionDate: '2026-01-01',
+        bedId,
+        guardians: [{ fullName: 'Guardian', phone: '9999999997', relationship: 'Father' }],
+      })
+      .expect(201);
+    const residentId = residentRes.body.data.id;
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/residents/${residentId}/payments/razorpay-order`)
+      .set(authed(ownerToken))
+      .send({ amountPaisa: '50000' });
+    expect(res.status).not.toBe(403);
+  });
+
   it('rejects an unknown capability value', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)

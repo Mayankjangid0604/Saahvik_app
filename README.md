@@ -192,7 +192,7 @@ org-wide.
 - `GET /residents/:id/payments/:paymentId/receipt` - Get the receipt's storage key; fetch the PDF itself from `GET /files/:key`
 - `GET /dues` - Org-wide dues list (paginated)
 - `GET /residents/:id/dues` - Get a resident's dues
-- `POST /residents/:id/payments/razorpay-order` - Create Razorpay order (Beginner)
+- `POST /residents/:id/payments/razorpay-order` - Create Razorpay order (Beginner; requires `payments:record`)
 - `POST /billing/razorpay/webhook` - Razorpay webhook
 
 ### Reports
@@ -333,9 +333,11 @@ pnpm test:e2e
   becoming allowed the moment an owner grants it (no re-login), an unknown
   capability value rejected, a staff member unable to grant themselves
   permissions, (Phase 3.1) file upload/delete denied without `files:manage`
-  and allowed once granted with an owner-bypass check, and (Phase 3.2)
+  and allowed once granted with an owner-bypass check, (Phase 3.2)
   notification schedule denied without `notifications:send` and allowed once
-  granted with an owner-bypass check.
+  granted with an owner-bypass check, and (Phase 3.3) Razorpay order creation
+  denied without `payments:record` and allowed once granted with an
+  owner-bypass check.
 - **Retention** (`src/retention/retention.service.spec.ts`): no-op when
   nothing is due, correct file deletion + column nulling, the exact 30-day
   cutoff calculation, and that one failed file delete doesn't block the

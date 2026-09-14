@@ -488,7 +488,7 @@ Every `@Post`/`@Patch`/`@Put`/`@Delete` route across all controllers verified:
 | `auth.controller.ts` | `POST /auth/staff-login` | Deliberately pre-auth |
 | `billing.controller.ts` | `POST /residents/:id/fee-structure` | `@UseGuards(JwtAuthGuard, CapabilityGuard)` + `@RequireCapability('billing:manage_fee_structure')` |
 | `billing.controller.ts` | `POST /residents/:id/payments` | `@UseGuards(JwtAuthGuard, CapabilityGuard)` + `@RequireCapability('payments:record')` |
-| `billing.controller.ts` | `POST /residents/:id/payments/razorpay-order` | `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(owner, staff)` — **flagged: see note below** |
+| `billing.controller.ts` | `POST /residents/:id/payments/razorpay-order` | `@UseGuards(JwtAuthGuard, CapabilityGuard)` + `@RequireCapability('payments:record')` **(fixed Phase 3.3)** |
 | `billing.controller.ts` | `POST /billing/razorpay/webhook` | Deliberately unauthenticated: HMAC-signature-verified server-to-server callback, no user context to check |
 | `file.controller.ts` | `POST /files/upload` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('files:manage')` (fixed Phase 3.1) |
 | `file.controller.ts` | `DELETE /files/:key` | `@UseGuards(CapabilityGuard)` + `@RequireCapability('files:manage')` (fixed Phase 3.1) |
@@ -516,21 +516,6 @@ Every `@Post`/`@Patch`/`@Put`/`@Delete` route across all controllers verified:
 No other write routes exist (`audit`, `dashboard`, `health`, `report`, `user` controllers
 expose only GET routes; `health` is additionally unauthenticated by design).
 
-**Flagged route (not fixed this phase — flagged for owner decision):**
-`POST /residents/:id/payments/razorpay-order` uses `@Roles(owner, staff)` which,
-since the only two roles in the system are owner and staff, effectively admits any
-authenticated user regardless of their specific capabilities. Logically it should
-require `payments:record` (it is a prerequisite step in the same payment workflow
-as `POST /residents/:id/payments`, which does require that capability). This was not
-introduced by Phase 3 or Phase 3.1 — it predates the capability system — and is not
-an injection of new behaviour but a pre-existing permissive guard. Fixing it is a
-one-liner (replace `@Roles(owner, staff)` with `@UseGuards(CapabilityGuard)` +
-`@RequireCapability('payments:record')`), but is flagged here rather than fixed
-silently, as the decision belongs to the owner. If left as-is, the impact is limited:
-the route initiates a Razorpay order but does not record a payment in the system —
-the actual payment recording (which does update the database) remains gated on
-`payments:record`.
-
 **Test coverage added (Phase 3.2):**
 Extended `test/staff-permissions.e2e-spec.ts` with two new tests (9 total in the suite,
 up from 7 after Phase 3.1):
@@ -538,6 +523,48 @@ up from 7 after Phase 3.1):
   grants the capability without re-login; same staff JWT then gets 201.
 - Owner always passes the `notifications:send` check on the schedule route regardless
   of the permissions column.
+
+## Phase 3.3 — Bug Fix: `POST /residents/:id/payments/razorpay-order` Was Not Capability-Gated
+
+**Finding (follow-on from Phase 3.2's exhaustive sweep):**
+`billing.controller.ts` — `POST /residents/:id/payments/razorpay-order` used
+`@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(UserRole.owner, UserRole.staff)`.
+Since `owner` and `staff` are the only two roles in the system, this effectively
+admitted every authenticated user regardless of their granted capabilities. The
+parallel route `POST /residents/:id/payments` (which records the payment) was
+correctly gated on `payments:record`; the order-creation step that precedes it was not.
+This was a pre-existing permissive guard that predated the capability system, not
+introduced by any Phase 3 work.
+
+This was flagged (but not fixed) in the Phase 3.2 sweep and is the last known
+open item in the capability system.
+
+**Fix applied:**
+- Replaced `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(UserRole.owner, UserRole.staff)`
+  on `createRazorpayOrder` with `@UseGuards(JwtAuthGuard, CapabilityGuard)` +
+  `@RequireCapability('payments:record')`, matching the guard pattern on the
+  `recordPayment` route immediately above it in the same controller.
+- The `RolesGuard`, `@Roles`, and `UserRole` imports were retained — four GET routes
+  in the same file still use `@Roles(owner, staff)`.
+- No new capability introduced: creating a Razorpay order is a prerequisite step in
+  the same payment workflow as recording the payment; requiring the same `payments:record`
+  capability is the correct and consistent boundary.
+
+**Updated sweep table**: the Phase 3.2 table above has been updated in-place to
+reflect the corrected guard for this route. The capability system is now complete:
+every write route is either capability-gated, hard owner-only, or deliberately
+unauthenticated (Razorpay webhook, auth pre-login routes).
+
+**Test coverage added (Phase 3.3):**
+Extended `test/staff-permissions.e2e-spec.ts` with two new tests (11 total in the suite,
+up from 9 after Phase 3.2):
+- Staff without `payments:record` gets 403 on `POST /residents/:id/payments/razorpay-order`;
+  owner grants the capability without re-login; same staff JWT then passes the guard.
+- Owner always passes the `payments:record` check on the razorpay-order route regardless
+  of the permissions column.
+Both tests create a dedicated room+bed (not reusing beds from prior tests) and upgrade
+the test org to Beginner plan (since the route's service-layer check requires it),
+ensuring the 403 under test comes only from the capability guard, not a plan restriction.
 
 ## Phase 3 — Data Retention Decision (Security & Privacy Policy §7)
 
