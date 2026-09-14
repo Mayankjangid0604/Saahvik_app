@@ -84,7 +84,7 @@ model User {
   // checks implicitly — this array is never read for a user with role
   // 'owner'). See src/common/capabilities.ts for the fixed capability list
   // and defaults; unknown values are rejected at the API layer.
-  permissions    String[]     @default(["property:manage", "residents:manage", "payments:record", "reports:view", "reports:export", "notifications:send"])
+  permissions    String[]     @default(["property:manage", "residents:manage", "payments:record", "reports:view", "reports:export", "notifications:send", "files:manage"])
   emailVerified  Boolean      @default(false) @map("email_verified")
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz

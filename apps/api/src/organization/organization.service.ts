@@ -1,7 +1,7 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ErrorCodes } from '../common/error-codes';
-import { StaffCapability, isStaffCapability } from '../common/capabilities';
+import { StaffCapability, isStaffCapability, DEFAULT_STAFF_CAPABILITIES } from '../common/capabilities';
 
 @Injectable()
 export class OrganizationService {
@@ -41,6 +41,12 @@ export class OrganizationService {
         name,
         role: 'staff',
         emailVerified: true,
+        // Explicit rather than relying on the Prisma column default, so
+        // there is exactly one source of truth for "what a new staff
+        // member starts with" — the column default previously drifted out
+        // of sync with this constant (it never included files:manage after
+        // that capability was added) since nothing actually read it.
+        permissions: DEFAULT_STAFF_CAPABILITIES,
       },
     });
   }

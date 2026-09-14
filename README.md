@@ -211,8 +211,9 @@ org-wide.
 - `POST /notifications/templates` - Create template
 
 ### Files
-- `POST /files/upload` - Upload file (authenticated)
-- `GET /files/:key` - Download file (authenticated)
+- `POST /files/upload` - Upload file (requires `files:manage`)
+- `GET /files/:key` - Download file (authenticated + org-scoped only; not capability-gated, like every other GET route)
+- `DELETE /files/:key` - Delete file (requires `files:manage`)
 
 ### Dashboard
 - `GET /dashboard` - Dashboard summary
@@ -247,7 +248,7 @@ All currency values are stored and transmitted as **BigInt paisa** (integer arit
 
 ## Staff Permissions
 
-Beyond the fixed owner/staff role split, an owner can independently grant or revoke a fixed set of capabilities per staff member: `property:manage`, `residents:manage`, `billing:manage_fee_structure`, `payments:record`, `reports:view`, `reports:export`, `notifications:send`, `notifications:manage_templates`, `audit:view`. An owner always has every capability implicitly. A new staff member starts with today's default set (residents, payments, reports, notifications) — nothing changes for existing staff until an owner deliberately edits their permissions in Settings → Staff Management, where "Cashier" / "Warden" / "Full operational" buttons apply a preset combination that can still be adjusted further.
+Beyond the fixed owner/staff role split, an owner can independently grant or revoke a fixed set of capabilities per staff member: `property:manage`, `residents:manage`, `billing:manage_fee_structure`, `payments:record`, `reports:view`, `reports:export`, `notifications:send`, `notifications:manage_templates`, `audit:view`, `files:manage` (upload/delete resident photos, ID documents, and branding assets). An owner always has every capability implicitly. A new staff member starts with today's default set (residents, payments, reports, notifications, property, files) — nothing changes for existing staff until an owner deliberately edits their permissions in Settings → Staff Management, where "Cashier" / "Warden" / "Full operational" buttons apply a preset combination that can still be adjusted further.
 
 Permission changes take effect immediately (checked fresh from the database on every request, not cached in the JWT) — no re-login required. Adding/removing staff logins and editing another staff member's own permissions are **not** delegable through this system; they remain hard owner-only actions, since granting that would let a staff member escalate their own or another's access. See `DEVIATIONS.md` for why this exists — it's a deliberate, disclosed override of the SRS's default fixed-role model for this tier, not part of the original spec.
 
@@ -330,8 +331,10 @@ pnpm test:e2e
 - **Staff permissions** (`test/staff-permissions.e2e-spec.ts`): the full
   real flow — a new staff member's default capabilities, a denied action
   becoming allowed the moment an owner grants it (no re-login), an unknown
-  capability value rejected, and a staff member unable to grant themselves
-  permissions.
+  capability value rejected, a staff member unable to grant themselves
+  permissions, and (Phase 3.1) file upload/delete denied without
+  `files:manage` and allowed once granted, plus an owner-bypass check for
+  both routes.
 - **Retention** (`src/retention/retention.service.spec.ts`): no-op when
   nothing is due, correct file deletion + column nulling, the exact 30-day
   cutoff calculation, and that one failed file delete doesn't block the

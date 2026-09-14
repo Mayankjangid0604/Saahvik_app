@@ -18,7 +18,8 @@ export type StaffCapability =
   | 'reports:export'
   | 'notifications:send'
   | 'notifications:manage_templates'
-  | 'audit:view';
+  | 'audit:view'
+  | 'files:manage';
 
 export const STAFF_CAPABILITIES: { value: StaffCapability; label: string }[] = [
   { value: 'property:manage', label: 'Manage wings, rooms, beds' },
@@ -30,11 +31,12 @@ export const STAFF_CAPABILITIES: { value: StaffCapability; label: string }[] = [
   { value: 'notifications:send', label: 'Send notifications / broadcasts' },
   { value: 'notifications:manage_templates', label: 'Manage notification templates' },
   { value: 'audit:view', label: 'View audit log' },
+  { value: 'files:manage', label: 'Upload / delete files (photos, ID docs, branding assets)' },
 ];
 
 export const CAPABILITY_PRESETS: Record<string, StaffCapability[]> = {
   Cashier: ['payments:record', 'reports:view'],
-  Warden: ['residents:manage', 'notifications:send', 'reports:view'],
+  Warden: ['residents:manage', 'notifications:send', 'reports:view', 'files:manage'],
   'Full operational': [
     'property:manage',
     'residents:manage',
@@ -42,6 +44,7 @@ export const CAPABILITY_PRESETS: Record<string, StaffCapability[]> = {
     'reports:view',
     'reports:export',
     'notifications:send',
+    'files:manage',
   ],
 };
 

@@ -190,6 +190,65 @@ describe('Staff Permissions (e2e)', () => {
     expect(selfGrantRes.status).toBe(403);
   });
 
+  it('staff without files:manage cannot upload or delete a file, owner grants it, then both succeed', async () => {
+    // At this point in the suite staffToken's permissions were last set
+    // explicitly (previous test) to a set that does not include
+    // files:manage — proving the default-vs-explicit-grant boundary the
+    // same way the fee-structure test above does.
+    const deniedUpload = await request(app.getHttpServer())
+      .post('/api/v1/files/upload')
+      .set(authed(staffToken))
+      .attach('file', Buffer.from('not-yet-allowed'), 'blocked.txt');
+    expect(deniedUpload.status).toBe(403);
+
+    const deniedDelete = await request(app.getHttpServer())
+      .delete('/api/v1/files/some-org-id/does-not-matter.txt')
+      .set(authed(staffToken));
+    expect(deniedDelete.status).toBe(403);
+
+    // Owner grants files:manage — no new login, same staff JWT.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)
+      .set(authed(ownerToken))
+      .send({
+        permissions: [
+          'residents:manage',
+          'payments:record',
+          'reports:view',
+          'reports:export',
+          'notifications:send',
+          'billing:manage_fee_structure',
+          'files:manage',
+        ],
+      })
+      .expect(200);
+
+    const allowedUpload = await request(app.getHttpServer())
+      .post('/api/v1/files/upload')
+      .set(authed(staffToken))
+      .attach('file', Buffer.from('now-allowed'), 'allowed.txt');
+    expect(allowedUpload.status).toBe(201);
+    const uploadedKey = allowedUpload.body.data.key;
+
+    const allowedDelete = await request(app.getHttpServer())
+      .delete(`/api/v1/files/${uploadedKey}`)
+      .set(authed(staffToken));
+    expect(allowedDelete.status).toBe(200);
+  });
+
+  it('owner can upload and delete files regardless of the permissions column', async () => {
+    const uploadRes = await request(app.getHttpServer())
+      .post('/api/v1/files/upload')
+      .set(authed(ownerToken))
+      .attach('file', Buffer.from('owner-file'), 'owner.txt');
+    expect(uploadRes.status).toBe(201);
+
+    const deleteRes = await request(app.getHttpServer())
+      .delete(`/api/v1/files/${uploadRes.body.data.key}`)
+      .set(authed(ownerToken));
+    expect(deleteRes.status).toBe(200);
+  });
+
   it('rejects an unknown capability value', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/api/v1/organizations/me/staff/${staffId}/permissions`)

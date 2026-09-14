@@ -370,6 +370,85 @@ requirements), `test/staff-permissions.e2e-spec.ts` (the real end-to-end
 flow: default permissions on a new staff member, denied → owner grants →
 allowed with no re-login, unknown capability rejected, self-grant denied).
 
+## Phase 3.1 — Bug Fix: `POST /files/upload` and `DELETE /files/:key` Were Never Capability-Gated
+
+**Finding** (reported externally, verified against the code before fixing):
+when the capability system above was built, every other write-capable route
+(residents, billing, property, notifications) was correctly gated with
+`@RequireCapability`/`CapabilityGuard` or an explicit owner check — these
+two file routes were missed. `file.controller.ts` is only class-level
+guarded with `JwtAuthGuard` (authentication + tenant scoping via
+`user.organizationId`), so any authenticated staff login — regardless of
+which capabilities the owner had actually granted them — could upload or
+delete any file in their organization, including resident photos and ID
+documents. Not exploitable through the current frontend (the only wired-up
+caller is the owner-only branding screen), but the API is the real trust
+boundary, not which screens happen to call it.
+
+**Fix**: added a new `files:manage` capability (`common/capabilities.ts`)
+— deliberately not reusing `residents:manage`, since file access spans more
+than residents (org branding assets too), keeping "each capability maps to
+a reviewable guard" intact. Applied `@UseGuards(CapabilityGuard)` +
+`@RequireCapability('files:manage')` to both `upload` and
+`Delete(':key(*)')` in `file.controller.ts`, per-route (matching
+`resident.controller.ts`'s style, since this controller isn't class-level
+capability-guarded). `GET /files/:key` (retrieval) is deliberately left
+as-is — read access for an authenticated, org-scoped user is consistent
+with how every other GET route in this API was left ungated by capability;
+no concrete reason emerged during this fix to change that, so it wasn't
+touched.
+
+**Default/preset placement, reasoned rather than guessed**:
+- `DEFAULT_STAFF_CAPABILITIES`: included. Before this fix shipped, staff
+  had unrestricted file access — that was the bug. Defaulting the new
+  capability *on* preserves that existing behavior exactly (matching the
+  stated purpose of `DEFAULT_STAFF_CAPABILITIES`: "existing staff logins
+  see no change until an owner deliberately edits their permissions")
+  rather than silently revoking something staff could already do the
+  moment this ships. An owner can turn it off per staff member for the
+  tighter boundary going forward.
+- `cashier` preset: excluded. A cashier only ever handles payments and has
+  no reason to touch a resident photo, ID document, or branding asset.
+- `warden` preset: included. A warden's defining capability is
+  `residents:manage` (admissions), and admitting a resident in practice
+  means uploading their photo/ID document as part of that same workflow —
+  granting `residents:manage` without `files:manage` would make a warden
+  unable to complete the task the preset exists for.
+- `full_operational` preset: included, since it's meant to represent the
+  complete day-to-day capability set a general operational staff member
+  needs.
+
+**A second, related bug found and fixed while verifying this placement**:
+`DEFAULT_STAFF_CAPABILITIES` was dead code — `OrganizationService.addStaff()`
+never read it, relying entirely on the `User.permissions` column's Prisma
+schema default instead, which had already drifted out of sync (it didn't
+include `files:manage`, since nothing that reads `DEFAULT_STAFF_CAPABILITIES`
+existed to catch the mismatch). Fixed by making `addStaff()` pass
+`permissions: DEFAULT_STAFF_CAPABILITIES` explicitly — one real source of
+truth — and updated the Prisma column default to match via migration
+`20260914055027_add_files_manage_capability_default` (defense-in-depth for
+any future direct-insert path, e.g. the seed script, which still relies on
+the column default). No existing row's stored `permissions` value was
+touched by this migration — only the default applied to a *new* row.
+
+**Sweep of every other write route** (`@Post`/`@Patch`/`@Delete` across all
+`apps/api/src/*/*.controller.ts`), done manually before closing this out:
+confirmed every other write route has either `@RequireCapability`,
+`@Roles`+`RolesGuard`, or an explicit `if (user.role !== 'owner') throw
+ForbiddenException(...)` check. The only unguarded write route found
+besides the two just fixed is `POST billing/razorpay/webhook`, which is
+correctly unauthenticated — it's a server-to-server Razorpay callback
+verified by HMAC signature inside the service, not a user-facing route, so
+there is no `user` object for a capability check to apply to. No other
+instance of this gap exists.
+
+**Test coverage**: extended `test/staff-permissions.e2e-spec.ts` (not a new
+file) — a staff member without `files:manage` denied on both upload and
+delete, the owner granting it via the real API and the same staff JWT then
+succeeding on both (no re-login), and a dedicated owner-bypass check
+(owner uploads and deletes regardless of the permissions column, mirroring
+the existing audit-log owner-bypass test's pattern).
+
 ## Phase 3 — Data Retention Decision (Security & Privacy Policy §7)
 
 **Also a disclosed product/legal decision, not inferred from code.** Two

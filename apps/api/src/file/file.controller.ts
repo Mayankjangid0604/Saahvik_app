@@ -16,7 +16,12 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { FileService } from './file.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CurrentUser, RequestUser } from '../common/decorators';
+import {
+  CurrentUser,
+  RequestUser,
+  RequireCapability,
+  CapabilityGuard,
+} from '../common/decorators';
 import { wrapSuccess } from '../common/response';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,6 +34,8 @@ export class FileController {
   ) {}
 
   @Post('upload')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('files:manage')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
@@ -93,6 +100,8 @@ export class FileController {
   }
 
   @Delete(':key(*)')
+  @UseGuards(CapabilityGuard)
+  @RequireCapability('files:manage')
   async deleteFile(
     @CurrentUser() user: RequestUser,
     @Param('key') key: string,
